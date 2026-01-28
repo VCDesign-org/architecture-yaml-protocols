@@ -1,0 +1,279 @@
+
+review_meta:
+  version: "1.0"
+  system_name: ""             # 対象システム名
+  owner: ""                   # 責任者/連絡先
+  review_date: ""             # ISO8601
+  environment_scope:          # 対象環境
+    - dev
+    - test
+    - prod
+
+logging_design:
+  # 0. ログの目的と分類（必須）
+  purpose_and_classes:
+    defined: true             # 必須: 運用/デバッグ/監査の区分が明文化されているか
+    classes:
+      operational_log:        # 運用ログ（運用者が判断に使う）
+        present: true
+        consumers:            # 想定読者（role名 or チーム名）
+          - operations
+        primary_use_cases:    # 例: 異常検知、再実行判断、日次監査など
+          - ""
+      debug_log:              # デバッグログ（開発者向け）
+        present: true
+        consumers:
+          - developers
+        retention_in_prod: "disabled|short|same_as_operational"
+      audit_log:              # 監査ログ（改ざん検知&追跡）
+        present: false
+        immutability: "none|append_only|worn|external_write_once"
+    separation_of_concerns:
+      file_or_stream_separation: true   # 物理/論理の分離
+      level_is_not_class: true          # レベル≠目的の明記（INFO/DEBUGだけで区分しない）
+
+  # 1. イベントモデル（必須）
+  event_model:
+    domain_events_defined: true         # 業務イベントの定義があるか
+    event_taxonomy:                     # イベント種別の正規化
+      - name: ""                        # 例: OrderImport
+        type: "batch|api|job|task|interaction|cron|etl"
+        level: "operational|debug|audit"
+        mandatory_fields:               # そのイベントが常に出すべきフィールド
+          - "event_id"
+          - "trace_id"
+          - "span_id"
+          - "status"
+          - "start_time"
+          - "end_time"
+          - "duration_ms"
+        start_end_semantics:
+          start_marker: "REQUIRED|OPTIONAL|N/A"
+          end_marker: "REQUIRED|OPTIONAL|N/A"
+          completion_states:
+            - "SUCCESS"
+            - "FAILURE"
+            - "PARTIAL"
+          idempotent_replay_hint: "REQUIRED|OPTIONAL|N/A"  # 再実行可否に必要な情報
+
+  # 2. 構造化ログ（必須）
+  structure:
+    encoding: "jsonl|json|protobuf|text"
+    schema_versioning:
+      enabled: true
+      version_field: "schema_version"
+      backward_compatible: true
+    fields:                             # 共通フィールド（全ログ共通ヘッダ）
+      timestamp: "ISO8601-UTC"
+      severity: "TRACE|DEBUG|INFO|WARN|ERROR|FATAL"
+      logger_name: "string"
+      message: "string"                 # 人が読む短文（業務語彙）
+      event_name: "string"              # ドメインイベント名（関数名ではない）
+      event_id: "uuid|ksuid|snowflake"
+      correlation:
+        trace_id: "string"              # 処理の呼び出し鎖
+        span_id: "string"
+        parent_span_id: "string|optional"
+        business_key: "string|array"    # 例: order_id, invoice_no
+      processing:
+        start_end_flag: "START|END|MIDDLE|SINGLE"
+        status: "SUCCESS|FAILURE|PARTIAL|RETRYING|SKIPPED"
+        attempt: "int"
+        duration_ms: "int"
+      runtime:
+        host: "string"
+        service_name: "string"
+        service_version: "string"
+        env: "dev|test|staging|prod"
+        region: "string"
+      error:
+        code: "string|nullable"
+        cause: "string|nullable"
+        stack_trace: "present_in_debug_only"
+      pii:
+        contains_pii: "true|false"
+        masking_policy: "name|email|phone|custom|none"
+    field_rules:
+      human_readable_message_required: true
+      function_name_not_primary: true         # 関数名を“主語”にしない
+      business_term_dictionary: "linked|absent"
+      localization:
+        language: "ja|en|…"
+        time_sync: "NTP|Other|Unknown"
+
+  # 3. 相関・トレース（必須）
+  correlation_and_tracing:
+    traceability_required: true
+    trace_header: "W3C-TraceContext|B3|custom"
+    log_propagation: "auto|manual"           # 分散処理でのID連携
+    cross_system_correlation: "supported|not_applicable"
+
+  # 4. ローテーション/アーカイブ/保管（必須）
+  retention_and_archive:
+    rotation:
+      policy: "size|time|size_or_time"
+      size_mb: 100
+      interval: "daily|hourly|custom"
+      compression: "gzip|zstd|none"
+    archive:
+      offload_required: true                  # 実行環境から退避必須
+      offload_target: "s3|blob|nas|syslog|opensearch|splunk"
+      offload_sla_minutes: 30
+      immutability: "none|object_lock|write_once"
+      retention_days:
+        operational: 90
+        debug: 14
+        audit: 3650
+    legal_hold_supported: false
+    indexing:
+      centralized_search: "elk|opensearch|splunk|cloudwatch|datadog|other"
+      index_rotation: "daily|weekly|size_based"
+
+  # 5. アクセス制御/プライバシ/セキュリティ（必須）
+  security_and_privacy:
+    access_control:
+      rbac_defined: true
+      roles:
+        - name: "ops"
+          read: ["operational"]
+        - name: "dev"
+          read: ["debug","operational"]
+    pii_masking:
+      enabled: true
+      methods: ["tokenize","hash","mask","drop"]
+      scope: ["operational","debug"]
+    secret_scrubbing:
+      enabled: true
+      patterns: ["api_key","password","token","credit_card"]
+    transport_security: "TLS1.2+"
+    at_rest_encryption: "enabled|disabled"
+    tamper_evidence: "hash_chain|sig|none"
+
+  # 6. しきい値/アラート/ダッシュボード（任意だが推奨）
+  operations_insight:
+    metrics_exposed:
+      - "error_rate"
+      - "latency_p95"
+      - "throughput"
+      - "backlog"
+    alerting:
+      channels: ["ops_chat","email","pager"]
+      rules_defined: true
+      examples:
+        - name: "batch_failure"
+          condition: "event_name=BatchX AND status=FAILURE"
+          action: "page_ops"
+    dashboards:
+      defined: true
+      links: []
+
+  # 7. 出力量制御（任意）
+  cost_and_rate_control:
+    sampling:
+      debug_sampling: "0.01|0.1|1.0"
+      operational_sampling: "1.0"
+    rate_limit:
+      enabled: true
+      max_events_per_sec: 1000
+      overflow_policy: "drop_debug|buffer|backpressure"
+    deduplication:
+      enabled: true
+      window_ms: 1000
+
+  # 8. 可用性/信頼性（必須）
+  reliability:
+    write_strategy: "async|sync|buffered"
+    backpressure_handling: "drop_non_operational|block|fallback"
+    outage_behavior:
+      local_fallback_file: true
+      loss_tolerance: "debug_only|none"
+    health_check_log: "periodic_heartbeat|none"
+
+  # 9. テスト/検証（必須）
+  testing_and_validation:
+    schema_validation: "automated|manual|none"
+    golden_events: true               # 代表的なイベントのサンプルと期待値
+    replay_test: true                 # 再実行時のログ一貫性検証
+    redaction_test: true              # マスキング漏れ検知
+    load_test:
+      peak_eps: 10000
+      sustained_minutes: 30
+
+  # 10. 実装境界（責務分離）（必須）
+  separation_of_responsibility:
+    logger_api_abstracted: true       # ロギングAPIの抽象化（ビジネス層からベンダ依存除去）
+    business_log_in_domain_layer: true
+    debug_log_in_tech_layer: true
+
+  # 11. 反パターン検出（必須）
+  anti_patterns:
+    file_name_carries_operational_meaning: false  # ファイル名に意味を持たせ、人が読む前提
+    function_name_as_event_name: false            # 関数名=イベント名
+    multiline_stack_in_operational: false         # 運用ログに長尺stack
+    unbounded_log_growth: false
+    no_archive_plan: false
+    grep_only_troubleshooting: false              # 構造化されておらず検索前提
+
+acceptance:
+  # 重み付けと判定基準（LLMのスコアリング指針）
+  criteria:
+    - id: "C01"
+      name: "運用/デバッグ/監査の目的分離"
+      weight: 10
+      must: ["logging_design.purpose_and_classes.defined=true",
+             "logging_design.purpose_and_classes.separation_of_concerns.file_or_stream_separation=true"]
+      fail_if: ["logging_design.anti_patterns.function_name_as_event_name=true"]
+    - id: "C02"
+      name: "開始/終了セマンティクス"
+      weight: 10
+      must: ["logging_design.event_model.domain_events_defined=true",
+             "logging_design.event_model.event_taxonomy[*].start_end_semantics.start_marker=/REQUIRED|OPTIONAL/",
+             "logging_design.structure.fields.processing.start_end_flag!=null"]
+    - id: "C03"
+      name: "相関ID（trace_id/span_id）"
+      weight: 10
+      must: ["logging_design.correlation_and_tracing.traceability_required=true",
+             "logging_design.structure.fields.correlation.trace_id!=null"]
+    - id: "C04"
+      name: "アーカイブ/退避設計"
+      weight: 10
+      must: ["logging_design.retention_and_archive.archive.offload_required=true",
+             "logging_design.retention_and_archive.archive.offload_sla_minutes>0"]
+      fail_if: ["logging_design.anti_patterns.no_archive_plan=true"]
+    - id: "C05"
+      name: "構造化ログ(JSON)とスキーマ進化"
+      weight: 8
+      must: ["logging_design.structure.encoding=jsonl|json",
+             "logging_design.structure.schema_versioning.enabled=true"]
+    - id: "C06"
+      name: "セキュリティ/プライバシ"
+      weight: 8
+      must: ["logging_design.security_and_privacy.pii_masking.enabled=true",
+             "logging_design.security_and_privacy.secret_scrubbing.enabled=true"]
+    - id: "C07"
+      name: "運用者が読む“業務文”"
+      weight: 6
+      must: ["logging_design.structure.field_rules.human_readable_message_required=true",
+             "logging_design.structure.field_rules.function_name_not_primary=true"]
+    - id: "C08"
+      name: "信頼性（障害時のふるまい）"
+      weight: 6
+      must: ["logging_design.reliability.outage_behavior.local_fallback_file=true"]
+    - id: "C09"
+      name: "テスト（スキーマ/再実行/マスキング）"
+      weight: 6
+      must: ["logging_design.testing_and_validation.schema_validation=automated|manual",
+             "logging_design.testing_and_validation.replay_test=true",
+             "logging_design.testing_and_validation.redaction_test=true"]
+    - id: "C10"
+      name: "反パターン不在"
+      weight: 6
+      must: ["logging_design.anti_patterns.file_name_carries_operational_meaning=false",
+             "logging_design.anti_patterns.grep_only_troubleshooting=false"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 80         # 合格閾値（%）
+    severity_map:
+      critical: ["C01","C02","C03","C04","C05","C06"]
+      major: ["C08","C09","C10"]
+      minor: ["C07"]

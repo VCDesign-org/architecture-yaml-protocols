@@ -1,0 +1,272 @@
+
+logger_spec:
+  version: "1.0"
+  library_name: "DomainLogger"
+  target_languages: ["java", "python", "go", "csharp", "nodejs"]  # 生成対象の候補
+  runtime:
+    thread_safety: true
+    async_write: true              # 可能なら非同期書き込み
+    bounded_buffer: true           # バッファに上限
+    drop_policy_on_overflow: "drop_debug"  # 過負荷時の挙動（運用ログを優先保持）
+    time_source: "system_utc"      # すべてUTCで記録
+  format:
+    encoding: "jsonl"
+    schema_version_field: "schema_version"
+    schema_version_value: "1"
+    common_fields:
+      timestamp: "ISO8601-UTC"
+      severity: "DEBUG|INFO|WARN|ERROR|FATAL"
+      event_name: "string"         # 関数名ではなく“業務イベント名”
+      message: "string"            # 短文（運用者が読む）
+      event_id: "uuid|ksuid|snowflake"
+      correlation:
+        trace_id: "string"
+        span_id: "string"
+        parent_span_id: "string|optional"
+        business_key: "string|array"  # 受注番号など
+      processing:
+        start_end_flag: "START|END|MIDDLE|SINGLE"
+        status: "SUCCESS|FAILURE|PARTIAL|RETRYING|SKIPPED|null"
+        attempt: "int|nullable"
+        duration_ms: "int|nullable"
+      runtime:
+        host: "string"
+        service_name: "string"
+        service_version: "string"
+        env: "dev|test|staging|prod"
+      error:
+        code: "string|nullable"
+        cause: "string|nullable"
+        stack_trace: "string|nullable"     # DEBUGのみ許可
+      pii:
+        contains_pii: "true|false"
+        masking_policy: "none|name|email|phone|custom"
+  sinks:                               # 出力先
+    primary: "file"                    # file|stdout|stderr|syslog|tcp|http|cloud
+    secondary: "stdout"
+    file:
+      path_pattern: "/var/log/app/${service_name}/${env}/app.log"
+      rotation:
+        policy: "size_or_time"
+        size_mb: 100
+        interval: "daily"
+        compression: "gzip"
+      archive:
+        offload_enabled: true
+        offload_target: "s3|nas|blob|opensearch"
+        offload_sla_minutes: 30
+        immutability: "none|object_lock"
+    stdout:
+      enabled: true
+  security:
+    pii_masking_enabled: true
+    secret_scrubbing_enabled: true
+    secret_patterns: ["api_key","password","token","authorization","credit_card"]
+  sampling:
+    debug_sampling_rate: 0.1     # デバッグログは1/10
+    operational_sampling_rate: 1.0
+  tracing:
+    standard: "w3c"
+    auto_propagation: true
+
+interfaces:
+  # 0. 初期化IF（必要）
+  initialize:
+    name: "initialize"
+    description: "ロガーの初期化（設定読み込み・出力先オープン・ヘルスチェック）"
+    inputs:
+      config: "LoggerConfig"
+    outputs: "bool"              # 成否
+    errors:
+      - "ConfigError"
+      - "SinkOpenError"
+    idempotent: true
+
+  # 1. 処理開始IF（必須）
+  start_process:
+    name: "startProcess"
+    description: "業務イベントの開始を記録する"
+    inputs:
+      event_name: "string"         # 例: OrderImport
+      business_key: "string|array" # 例: order_id, invoice_no
+      trace_id: "string|optional"  # 無指定なら生成
+      span_id: "string|optional"
+      attributes: "map<string,any>|optional"  # 補助情報
+    outputs:
+      event_id: "string"           # この処理単位のID
+      trace_id: "string"
+      span_id: "string"
+    side_effects:
+      - "ログ行出力(START)"
+      - "内部に開始時刻を記憶"
+    constraints:
+      - "start/ end はペアになること"
+    examples:
+      - call:
+          event_name: "OrderImport"
+          business_key: ["2026-01-22", "WH-01"]
+        returns:
+          event_id: "ksuid_..."
+          trace_id: "trace_..."
+          span_id: "span_..."
+
+  # 2. 処理終了IF（必須）
+  end_process:
+    name: "endProcess"
+    description: "業務イベントの終了を記録する（結果、所要時間、試行回数）"
+    inputs:
+      event_id: "string"             # startProcessの戻り値
+      status: "SUCCESS|FAILURE|PARTIAL|SKIPPED"
+      attempt: "int|optional"
+      error_code: "string|optional"
+      error_cause: "string|optional"
+      attributes: "map<string,any>|optional"
+    outputs: "bool"
+    side_effects:
+      - "ログ行出力(END)"
+      - "duration_ms を計算・出力"
+    failure_modes:
+      - "存在しない event_id の場合は WARN を出しつつ単独END(推奨: SINGLE)として出力"
+
+  # 3. メッセージ出力IF（運用向け）
+  info:
+    name: "info"
+    description: "運用者が読む短文の業務メッセージを記録"
+    inputs:
+      event_name: "string"
+      message: "string"
+      business_key: "string|array|optional"
+      trace_id: "string|optional"
+      attributes: "map<string,any>|optional"
+    outputs: "bool"
+    rules:
+      - "message は業務語彙で書く（関数名は message に含めない）"
+      - "PII/秘匿情報は自動マスキング"
+
+  # 4. デバッグ出力IF（開発向け）
+  debug:
+    name: "debug"
+    description: "内部状態・変数など開発向けの詳細ログ"
+    inputs:
+      message: "string"
+      context: "map<string,any>|optional"
+      trace_id: "string|optional"
+      stack_trace: "string|optional"
+    outputs: "bool"
+    controls:
+      sampling: "debug_sampling_rate を適用"
+      redact_stack_trace_in_prod: true
+
+  # 5. 定期IF（内部アーカイブ/ローテーション）
+  periodic_maintenance:
+    name: "tick"
+    description: "一定間隔で呼ばれ、ローテーション・退避・圧縮などのメンテナンスを実施"
+    inputs:
+      now: "timestamp|optional"
+      force_rotate: "bool|optional"
+      flush: "bool|optional"
+    outputs: "MaintenanceReport"
+    behaviors:
+      - "ローテーション閾値に達したらロールオーバー"
+      - "圧縮・退避の結果を報告"
+      - "失敗時は次回までリトライ計画を保持"
+
+  # 6. フラッシュIF（任意だが推奨）
+  flush:
+    name: "flush"
+    description: "バッファに残るログを強制書き出し"
+    inputs: {}
+    outputs: "bool"
+
+  # 7. シャットダウンIF（必須）
+  shutdown:
+    name: "shutdown"
+    description: "安全に終了（flush→sink close）。プロセス終了フックで呼ぶ"
+    inputs: { timeout_ms: "int|optional" }
+    outputs: "bool"
+
+  # 8. 相関ID設定IF（任意）
+  set_correlation:
+    name: "setCorrelation"
+    description: "スレッド/コンテキストローカルに trace_id/span_id/business_key を設定"
+    inputs:
+      trace_id: "string"
+      span_id: "string|optional"
+      business_key: "string|array|optional"
+    outputs: "void"
+
+  # 9. マスキングルール更新IF（任意）
+  update_redaction_rules:
+    name: "updateRedactionRules"
+    description: "PIIやシークレットのマスキングルールを動的更新"
+    inputs:
+      rules: "list<RedactionRule>"
+    outputs: "bool"
+
+contracts:
+  severity_policy:
+    allow_stack_trace_in: ["DEBUG"]        # 運用ログ(INFO以上)にはStackを出さない
+  message_style:
+    prefer_business_terms: true
+    forbid_function_name_as_subject: true  # 関数名を主語にしない
+  start_end_semantics:
+    required_pairing: true
+    compute_duration_on_end: true
+    single_shot_allowed: true              # 単発イベントは start_end_flag=SINGLE
+  retention:
+    rotate_policy: "size_or_time"
+    archive_required: true
+    offload_sla_minutes: 30
+
+test_guidance:
+  unit_tests:
+    - name: "start_end_pairing_and_duration"
+      expect: "STARTの後にENDでduration_msが正しく計算される"
+    - name: "operational_info_without_stack"
+      expect: "INFOでstack_traceが出力されない"
+    - name: "debug_sampling"
+      expect: "DEBUGが指定比率で抑制される"
+    - name: "masking_and_secret_scrub"
+      expect: "PII/Secretsが出力前にマスクされる"
+    - name: "rotation_and_archive"
+      expect: "サイズ/時間でロール、圧縮・退避がtickで実施される"
+    - name: "overflow_policy"
+      expect: "過負荷でDEBUGを優先的にドロップしINFOは保持される"
+    - name: "shutdown_flush"
+      expect: "シャットダウン時にデータ損失なし"
+  golden_event_example:
+    start:
+      event_name: "StockRecalc"
+      business_key: ["DC-01","2026-01-22"]
+    end:
+      status: "SUCCESS"
+      attempt: 1
+
+anti_patterns:
+  - "event_name に関数名を入れる"
+  - "INFOでスタックトレースを出す"
+  - "実行環境にアーカイブし続ける（退避なし）"
+  - "grep前提の非構造化ログ"
+  - "start/endの対応が不明"
+  - "時刻がローカルタイム"
+  - "バッファ無限大"
+
+codegen_hints:
+  java:
+    logger_interface_name: "DomainLogger"
+    suggested_libs: ["SLF4J facade", "Logback appender(custom)"]
+    thread_context: "ThreadLocal or MDC for trace_id"
+  python:
+    logger_interface_name: "domain_logger"
+    suggested_libs: ["logging", "concurrent.futures", "queue"]
+    context: "contextvars for trace_id"
+  go:
+    logger_interface_name: "domainlogger"
+    suggested_libs: ["zap or zerolog"]
+    context: "context.Context with trace fields"
+  nodejs:
+    logger_interface_name: "domainLogger"
+    suggested_libs: ["pino", "winston"]
+    context: "AsyncLocalStorage for trace_id"
+
+``

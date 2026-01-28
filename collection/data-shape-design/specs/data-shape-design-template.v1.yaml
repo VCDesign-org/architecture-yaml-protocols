@@ -1,0 +1,93 @@
+# fileName: data-shape-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, prod]
+
+data_shape_design:
+  # 1. 前提条件と制約（必須）
+  # Shape選択の根拠となるパラメータ
+  context:
+    use_case: "monitoring|bi|analytics|maintenance|mixed"
+    priorities:                           # 優先順位（上位2つが重要）
+      - "latency"
+      - "completeness"
+      - "meaning_stability"
+      - "auditability"
+      - "simplicity"
+    constraints:
+      tag_dynamics: "stable|changing|unknown" # タグの増減頻度
+      plant_variance: "low|high"              # 拠点ごとの設備差
+      quality_state_required: true            # 品質フラグ(D0)の必須性
+      ultra_low_latency_ui: false             # ミリ秒単位のUI描画が必要か
+
+  # 2. レイヤー別 Shape 選択（必須）
+  # 各段階でどの Sxx パターンを採用するか
+  flow_layers:
+    # (A) Edge / Ingest 層
+    edge:
+      selected_shape: "S01_row_event|S06_state_change|raw"
+      intent: "capture_discrete_events"
+
+    # (B) Canonical / Bus 層（ここが正本）
+    canonical:
+      selected_shape: "S03_long|S04_long_quality|S08_fact_split"
+      is_immutable: true
+      reason: "high_variance_resilience"      # 例: 設備差を吸収するため縦持ち
+      guardrails:
+        - "never_use_S02_wide_here"           # ここで横持ちにすると死ぬ
+
+    # (C) Serving / BI 層（ここは捨てて作り直せる）
+    serving:
+      selected_shape: "S02_wide|S05_pivot|S07_snapshot"
+      refresh_policy: "on_demand|periodic|stream"
+      source_canonical: "canonical"           # 正本から生成されていること
+      warning: "do_not_treat_as_truth"
+
+  # 3. 変換と境界（必須）
+  # Shape間の変換ロジック
+  transformations:
+    - name: "canonical_to_bi"
+      from: "S04_long_quality"
+      to: "S05_pivot"
+      logic: "pivot_by_timestamp"
+      constraints:
+        - "quality_flag_must_propagate"       # 欠損/補正情報を消さない
+        - "limit_column_count"                # カラム爆発対策
+
+  # 4. アンチパターン・チェック（必須）
+  # factory-data-shapes の avoid_when ルールに基づく
+  risk_assessment:
+    bi_as_source_of_truth: false              # BI用テーブル(S05)を正本として参照していないか
+    wide_table_upstream: false                # 上流(Canonical)で横持ち(S02)をしていないか
+    meaning_in_edge: false                    # 意味解釈(KPI計算)をEdgeで焼き込んでいないか
+
+acceptance:
+  criteria:
+    # R001: タグが変動する環境での横持ち禁止
+    - id: "SHP01"
+      name: "Avoid Wide Shape when Unstable"
+      weight: 12
+      must: ["data_shape_design.context.constraints.tag_dynamics=changing implies data_shape_design.flow_layers.canonical.selected_shape!=S02_wide"]
+      
+    # R010: 品質要件がある場合の S04 利用
+    - id: "SHP02"
+      name: "Quality State Propagation"
+      weight: 10
+      must: ["data_shape_design.context.constraints.quality_state_required=true implies data_shape_design.flow_layers.canonical.selected_shape=S04_long_quality"]
+      
+    # R002: BIテーブルの正本化禁止
+    - id: "SHP03"
+      name: "No BI as Source of Truth"
+      weight: 10
+      must: ["data_shape_design.risk_assessment.bi_as_source_of_truth=false"]
+      
+    # R012: 意味が頻繁に変わる場合の分離
+    - id: "SHP04"
+      name: "Fact/Resolution Split"
+      weight: 8
+      must: ["data_shape_design.context.priorities includes meaning_stability implies data_shape_design.flow_layers.canonical.selected_shape includes S08_fact_split"]
+
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 85

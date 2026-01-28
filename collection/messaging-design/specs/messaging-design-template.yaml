@@ -1,0 +1,75 @@
+# fileName: messaging-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, test, prod]
+
+messaging_design:
+  # 1. メッセージングモデル（必須）
+  model:
+    pattern: "pubsub|queue|stream"
+    broker_type: "kafka|sqs|rabbitmq|pubsub"
+    ordering_guarantee: "none|partition_key|global" # 順序保証の要否
+
+  # 2. スキーマとガバナンス（必須）
+  schema:
+    format: "json|avro|protobuf"
+    registry_usage: "confluent|glue|none"  # スキーマレジストリの利用
+    evolution_strategy: "forward|backward|full" # スキーマ変更の互換性ルール
+    validation_timing: "producer_side|consumer_side|broker_side"
+
+  # 3. プロデューサー（送信）設計（必須）
+  producer:
+    acknowledgement: "leader|all|none"     # 書き込み保証レベル
+    partitioning_strategy: "hash_key|round_robin|custom"
+    max_message_size_kb: 1024
+    compression: "gzip|snappy|lz4|none"
+
+  # 4. コンシューマー（受信）設計（必須）
+  consumer:
+    idempotency:
+      required: true
+      mechanism: "db_unique_constraint|dedup_table|redis_check" # 重複排除ロジック
+    concurrency:
+      workers_per_instance: 1
+      scaling_metric: "lag|cpu"
+
+  # 5. 障害ハンドリング（必須）
+  failure_handling:
+    dead_letter_queue:
+      enabled: true
+      retry_policy: "exponential_backoff|linear"
+      max_retries: 5
+      dlq_monitoring: true                 # DLQに入ったらアラート発報するか
+    poison_pill_handling: "discard|dlq"    # デシリアライズできない不正メッセージの扱い
+
+  # 6. トレースと可観測性（推奨）
+  observability:
+    trace_propagation: "header|metadata"   # trace_idの伝播方法
+    metrics:
+      - "producer_latency"
+      - "consumer_lag"
+      - "dlq_count"
+
+acceptance:
+  criteria:
+    - id: "M01"
+      name: "コンシューマーの冪等性実装"
+      weight: 15
+      must: ["messaging_design.consumer.idempotency.required=true",
+             "messaging_design.consumer.idempotency.mechanism!=null"]
+    - id: "M02"
+      name: "Dead Letter Queue (DLQ) の設置"
+      weight: 12
+      must: ["messaging_design.failure_handling.dead_letter_queue.enabled=true"]
+    - id: "M03"
+      name: "スキーマ互換性の戦略"
+      weight: 8
+      must: ["messaging_design.schema.evolution_strategy!=null"]
+    - id: "M04"
+      name: "コンシューマーラグの監視"
+      weight: 5
+      must: ["messaging_design.observability.metrics include consumer_lag"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 85

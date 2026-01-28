@@ -1,0 +1,80 @@
+# fileName: persistence-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, prod]
+
+persistence_design:
+  # 1. データストア選定（必須）
+  store_selection:
+    type: "RDBMS|NoSQL|NewSQL|Key-Value"
+    engine: "PostgreSQL|MySQL|DynamoDB|MongoDB"
+    consistency_model: "strong|eventual|causal"
+
+  # 2. データモデリング方針（必須）
+  modeling:
+    naming_convention: "snake_case|camelCase"
+    primary_key_strategy: "uuid|bigint_serial|ulid"
+    foreign_key_constraints: "db_enforced|app_enforced" # 外部キー制約をDBで貼るか
+    soft_delete:
+      enabled: true
+      column: "deleted_at|is_active"
+      strategy: "view_filtering|app_filtering"
+
+  # 3. スキーマ管理とマイグレーション（必須）
+  schema_management:
+    migration_tool: "flyway|liquibase|prisma|custom"
+    version_control: true                  # DDLがGit管理されているか
+    destructive_changes:
+      policy: "forbid_drop_column|allow_with_maintenance" # カラム削除等のルール
+
+  # 4. パフォーマンスとインデックス（必須）
+  performance:
+    indexing_strategy:
+      required_for_foreign_keys: true
+      cardinality_check: true              # カーディナリティの低いカラムへのIndex回避
+    partitioning:
+      enabled: false
+      key: "date|tenant_id"
+    connection_pooling:
+      pool_size_calc: "fixed|dynamic"
+      client_side_timeout_ms: 5000
+
+  # 5. バックアップと復旧（必須）
+  backup_and_recovery:
+    rpo_minutes: 5                         # 目標復旧時点（許容データ損失時間）
+    rto_minutes: 60                        # 目標復旧時間（ダウンタイム許容）
+    pitr_enabled: true                     # Point-in-Time Recoveryの有無
+    backup_frequency: "daily|hourly"
+    retention_days: 30
+
+  # 6. セキュリティ（必須）
+  security:
+    encryption_at_rest: "kms|tde|none"     # 保存時の暗号化
+    encryption_in_transit: "tls"
+    audit_logging:
+      enabled: true
+      events: ["DDL", "DCL", "LOGIN_FAILURE"]
+
+acceptance:
+  criteria:
+    - id: "D01"
+      name: "スキーママイグレーションのコード管理"
+      weight: 12
+      must: ["persistence_design.schema_management.version_control=true",
+             "persistence_design.schema_management.migration_tool!=null"]
+    - id: "D02"
+      name: "PITR (Point-in-Time Recovery) の有効化"
+      weight: 10
+      must: ["persistence_design.backup_and_recovery.pitr_enabled=true"]
+    - id: "D03"
+      name: "物理削除禁止（論理削除）または厳格な削除ポリシー"
+      weight: 8
+      must: ["persistence_design.modeling.soft_delete.enabled=true OR defined_cleanup_policy"]
+    - id: "D04"
+      name: "保存データの暗号化"
+      weight: 8
+      must: ["persistence_design.security.encryption_at_rest!=none"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 80

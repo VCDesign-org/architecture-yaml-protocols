@@ -1,0 +1,85 @@
+# fileName: resiliency-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [prod]
+
+resiliency_design:
+  # 1. タイムアウト設計（必須）
+  timeouts:
+    connect_timeout_ms: 1000          # 接続確立までの待機時間（短くあるべき）
+    read_timeout_ms: 3000             # レスポンス待機時間
+    write_timeout_ms: 3000
+    downstream_sla_alignment: true    # 依存先のSLA + α の設定になっているか
+
+  # 2. リトライ戦略（必須）
+  retries:
+    enabled: true
+    max_attempts: 3                   # 初回 + リトライ2回
+    conditions:                       # リトライしてよいエラー
+      - "network_error"
+      - "http_503"
+      - "http_429"
+    backoff_strategy:
+      type: "exponential|linear|fixed"
+      initial_interval_ms: 100
+      multiplier: 2.0
+      jitter_factor: 0.5              # Thundering Herd対策（必須）
+    idempotency_check: "required"     # 非冪等な処理をリトライしない保証
+
+  # 3. サーキットブレーカー（必須）
+  circuit_breaker:
+    enabled: true
+    failure_threshold_percent: 50     # エラー率がこれを超えたら遮断
+    wait_duration_open_state_ms: 10000 # 遮断してから復旧を試みるまでの時間
+    minimum_number_of_calls: 10       # 判定に必要な最小リクエスト数
+
+  # 4. バルクヘッド（隔壁）（推奨）
+  bulkhead:
+    enabled: true
+    type: "thread_pool|semaphore"
+    max_concurrent_calls: 20          # 同時実行数の上限
+    max_wait_duration_ms: 100         # スレッド空き待ち時間
+
+  # 5. レート制限（Outbound）（任意）
+  rate_limiting_outbound:
+    enabled: true                     # 依存先をDDoSしないための自己制限
+    max_requests_per_sec: 100
+
+  # 6. フォールバック（必須）
+  fallback:
+    strategy: "cache|default_value|empty_list|error"
+    cache_ttl_seconds: 60             # キャッシュを返す場合の鮮度
+    degradation_mode:                 # 機能縮退の定義
+      is_acceptable: true
+      behavior: "Show non-personalized content"
+
+  # 7. カオスエンジニアリング（任意）
+  chaos_testing:
+    planned: true
+    scenarios:
+      - "latency_injection"
+      - "pod_kill"
+
+acceptance:
+  criteria:
+    - id: "R01"
+      name: "ジッター（ゆらぎ）付きバックオフ"
+      weight: 10
+      must: ["resiliency_design.retries.backoff_strategy.jitter_factor>0"]
+    - id: "R02"
+      name: "タイムアウトの明示的な設定"
+      weight: 10
+      must: ["resiliency_design.timeouts.connect_timeout_ms<=2000",
+             "resiliency_design.timeouts.read_timeout_ms>0"]
+    - id: "R03"
+      name: "フォールバック戦略の定義"
+      weight: 8
+      must: ["resiliency_design.fallback.strategy!=null"]
+    - id: "R04"
+      name: "サーキットブレーカーの導入"
+      weight: 8
+      must: ["resiliency_design.circuit_breaker.enabled=true"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 80

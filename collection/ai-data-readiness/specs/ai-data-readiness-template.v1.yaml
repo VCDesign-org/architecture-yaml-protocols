@@ -1,0 +1,89 @@
+# fileName: ai-data-readiness-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, prod]
+  target_ai_consumers: ["analytics", "anomaly_detection", "llm_rag", "future_agents"]
+
+ai_readiness_design:
+  # 1. ファクトと仮説の分離（必須）
+  # AIは「保存されたもの＝疑いようのない事実」と解釈するため、区別を強制する
+  fact_vs_hypothesis:
+    defined: true
+    storage_separation:
+      fact_store: "immutable_ledger|raw_logs"       # 「起きたこと」の保存場所
+      interpretation_store: "snapshot|derived_view" # 「解釈・補正」の保存場所
+    explicit_labeling:
+      required_fields: ["is_estimated", "confidence_score", "generator_model"]
+      model_generated_data: "must_be_labeled_as_hypothesis" # AI生成データを事実として混ぜない
+
+  # 2. コンテキストの明示化（必須）
+  # 「人間なら空気を読んでわかる」暗黙知を排除する
+  context_explicitness:
+    unit_of_measure:
+      attached_to_data: "always|per_column"         # 単位（kg, mm）がデータと分離していないか
+    time_semantics:
+      timezone_explicit: true
+      meaning_of_timestamp: "event_time|ingestion_time|processing_time" # 「いつ」の意味
+    data_dictionary:
+      machine_readable: true                        # カラム定義がLLMに読める形式（json schema等）であるか
+
+  # 3. 品質と欠損の表現（必須）
+  # AIに「正常なゼロ」と「欠損のゼロ」を誤解させない
+  quality_transparency:
+    null_handling:
+      explicit_missing: true                        # NULLと0と空文字を区別しているか
+    quality_flags:
+      enabled: true
+      standard: "OPC-UA|Custom"
+      values: ["Good", "Bad", "Uncertain", "Substituted"]
+    correction_lineage:
+      traceable: true                               # 「誰がいつなぜ値を書き換えたか」が追えるか
+
+  # 4. 「保存しない」判断の記録（推奨）
+  # AIは「ないデータ」の理由（意図的除外か、取り忘れか）を推論できない
+  omission_documentation:
+    decision_records: "required"                    # なぜこのデータを保存しなかったかのADRを残す
+    sampling_policy_explicit: true                  # 間引き（サンプリング）がある場合、その率をメタデータに含む
+
+  # 5. フィードバックループと人間介入（必須）
+  # AIの誤りを人間が訂正し、それをAIが再学習できる構造
+  human_in_the_loop:
+    correction_mechanism:
+      interface_exists: true                        # 誤ったラベル/値を人間が修正できるか
+    override_precedence: "human_over_ai"            # 人間の修正がAIの推論より優先される保証
+    feedback_storage:
+      store_as: "training_dataset"                  # 修正履歴を次期モデルの学習データとして保存するか
+
+  # 6. アンチパターン検出（必須）
+  anti_patterns:
+    store_everything_just_in_case: false            # 「とりあえず全保存」の禁止（ゴミデータ汚染防止）
+    implicit_business_logic: false                  # SQL/コード内に隠れた「マジックナンバー」による補正
+    destructive_update: false                       # 過去の事実を上書きで消す行為（AIが時系列変化を追えなくなる）
+
+acceptance:
+  criteria:
+    - id: "AI01"
+      name: "推論値/補正値の明示的なラベル付け"
+      weight: 10
+      must: ["ai_readiness_design.fact_vs_hypothesis.explicit_labeling.model_generated_data=must_be_labeled_as_hypothesis"]
+    - id: "AI02"
+      name: "品質フラグの付与"
+      weight: 10
+      must: ["ai_readiness_design.quality_transparency.quality_flags.enabled=true"]
+    - id: "AI03"
+      name: "暗黙の文脈（単位・タイムゾーン）の排除"
+      weight: 8
+      must: ["ai_readiness_design.context_explicitness.time_semantics.timezone_explicit=true",
+             "ai_readiness_design.context_explicitness.unit_of_measure.attached_to_data!=null"]
+    - id: "AI04"
+      name: "「とりあえず全保存」の抑止"
+      weight: 8
+      must: ["ai_readiness_design.anti_patterns.store_everything_just_in_case=false"]
+    - id: "AI05"
+      name: "破壊的更新の禁止"
+      weight: 10
+      must: ["ai_readiness_design.anti_patterns.destructive_update=false"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 85

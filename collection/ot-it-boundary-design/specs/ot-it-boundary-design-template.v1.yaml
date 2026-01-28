@@ -1,0 +1,86 @@
+# fileName: ot-it-boundary-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  boundary_scope: "Line_A_to_Cloud"
+  environment_scope: [prod]
+
+ot_it_boundary_design:
+  # 1. 制御インタラクション設計（必須）
+  # ITからOTへの働きかけに関する「非同期」契約
+  control_interaction:
+    model: "async_intent|prohibited_sync_command" # ITは「意思(Intent)」を送るのみで「指令(Command)」はしない
+    start_semantics:
+      meaning: "permission_to_run"                # Startは「運転許可」であり「強制起動」ではない
+      prerequisite: "local_ready_signal"          # 現場側のReadyがなければStartは無視される
+    stop_semantics:
+      meaning: "withdraw_permission"              # Stopは「許可の取り下げ（次に行かない）」
+      behavior: "complete_current_cycle"          # 現在のサイクルは完走させる（即時停止ではない）
+    exclusive_control:
+      strategy: "hard_wired_exclusion|plc_logic_exclusion" # Local/Remoteが同時に有効にならない保証
+
+  # 2. データ確定と「章（Chapter）」設計（必須）
+  # データがどこで「事実」として確定するか
+  data_commitment:
+    unit: "cycle|batch|time_window"               # データの確定単位（章）
+    identification:
+      id_source: "plc_counter|generated_uuid"     # 章を一意に識別するIDの出処
+    trigger:
+      completion_signal: "cycle_done|batch_end"   # 確定のトリガー
+    constraints:
+      no_partial_commit: true                     # 途中経過を確定値として扱わない
+
+  # 3. OT-OT 協調設計（OT間連携がある場合）
+  # ITを介さずに現場だけで完結すべき同期
+  ot_ot_coordination:
+    required: false
+    sync_type: "weak_signal|none"                 # Ready/Busy/Done による緩やかな同期
+    anti_pattern_check:
+      it_loop_exclusion: true                     # IT経由で制御ループを回していないか
+
+  # 4. 可視化ガードレール（必須）
+  # 「会議室の時間」で制御を誤解させないための防壁
+  visualization_guardrails:
+    liveness_handling:
+      on_disconnect: "show_unknown|gray_out"      # 通信断時は「直前値」ではなく「不明」を出す
+    time_representation:
+      display_mode: "chapter_result|current_status"
+      warning: "do_not_mix_control_time_and_meeting_time" # 制御の揺らぎをそのまま会議室に見せない
+    
+  # 5. スコープカット（必須）
+  # 「今はDXしない」と決めた領域の明示
+  scope_exclusions:
+    - target: "Manual_Inspection_Bench_B"
+      reason: "state_machine_not_defined"         # 状態遷移が定義されていないため対象外
+    - target: "Legacy_Press_Machine_01"
+      reason: "no_cycle_completion_signal"        # 完了信号が取れないため対象外
+
+acceptance:
+  criteria:
+    # A1: 同期前提の上位制御の禁止
+    - id: "BND01"
+      name: "No Synchronous Control Transaction"
+      weight: 15
+      must: ["ot_it_boundary_design.control_interaction.model=async_intent"]
+      
+    # A2: 即時停止の禁止（境界停止の採用）
+    - id: "BND02"
+      name: "Boundary Stop Semantics"
+      weight: 12
+      must: ["ot_it_boundary_design.control_interaction.stop_semantics.behavior=complete_current_cycle"]
+
+    # A4: 通信断時の直前値表示の禁止
+    - id: "BND03"
+      name: "Explicit Liveness/Unknown State"
+      weight: 10
+      must: ["ot_it_boundary_design.visualization_guardrails.liveness_handling.on_disconnect!=show_last_value"]
+
+    # G5: 途中値の確定利用禁止
+    - id: "BND04"
+      name: "No Partial Commit"
+      weight: 10
+      must: ["ot_it_boundary_design.data_commitment.constraints.no_partial_commit=true"]
+
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 90 # 境界設計は安全に関わるため高めに設定

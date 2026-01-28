@@ -1,0 +1,87 @@
+# fileName: db-layer-responsibility-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  scope: "Factory_Data_Platform_Core"
+  environment_scope: [prod]
+
+db_layer_responsibility:
+  # 1. 位置づけの定義（必須）
+  # Principle 1: DB is a transit point
+  positioning:
+    role: "transit_point"                     # DBは「通過点」であり「最終目的地」ではない
+    primary_value: "reliability_of_flow"      # 価値は「分析機能」ではなく「流れを止めないこと」にある
+    is_flow_master: false                     # DBが全体のフローを制御してはならない
+
+  # 2. 入力側の責務（必須）
+  # Principle 6: Input side must be stronger than DB
+  input_requirements:
+    buffering: "required_at_edge"             # DBダウン時にEdge側でバッファリングする機能
+    reduction: "upstream_only"                # データ削減・間引きはDBに入れる前に行う
+    normalization: "required_before_ingest"   # DBは「正規化されたデータ」しか受け取らない
+    retry_mechanism: "store_and_forward"      # DBへの書き込み失敗時は再送する
+
+  # 3. 回復性と完全性（必須）
+  # Principle 2: Completeness is not a DB responsibility
+  recoverability:
+    completeness_guarantee: "eventual"        # 即時完全性は求めない（回線断は起きる）
+    gap_handling: "allow_and_backfill"        # 欠損（Gap）を許容し、後から埋める
+    outage_behavior: "accept_downtime"        # DB停止を許容する（HAで無理に頑張らない）
+
+  # 4. 工場非依存性（必須）
+  # Principle 4: DB does not know the factory
+  factory_agnosticism:
+    schema_dependency: "minimal_or_generic"   # 設備種別ごとの専用カラムを作らない
+    vendor_specifics: "contained_in_payload"  # ベンダ固有情報はJSONペイロード等に閉じ込める
+    hierarchy_knowledge: "none"               # DBは「工場＞ライン＞設備」という階層を知らなくてよい
+
+  # 5. 意味とファクトの分離（必須）
+  # Principle 5: Meaning does not live in DB
+  semantics_separation:
+    stored_content: "fact_only"               # DBには「観測事実」のみを保存する
+    meaning_resolution: "external_service"    # 「この値が何（KPI等）か」の解釈はDB外で行う
+    change_tolerance: "high"                  # 意味が変わってもDBスキーマ変更は不要であること
+
+  # 6. 交換可能性（必須）
+  # Principle 3: DB must be replaceable
+  replaceability:
+    lock_in_avoidance:
+      proprietary_features: "forbidden"       # ストアドプロシージャや独自機能の利用禁止
+      standard_interface: "sql_or_api"
+    migration_strategy: "defined"             # 別のDB製品へ移行するシナリオがあるか
+
+  # 7. アンチパターン・チェック（必須）
+  anti_patterns:
+    db_as_integration_hub: false              # DBをシステム間連携のハブにしていないか
+    business_logic_in_db: false               # ビジネスロジックをSQL/ストアドで実装していないか
+    schema_per_equipment: false               # 設備ごとにテーブルを作っていないか
+
+acceptance:
+  criteria:
+    # P1: 通過点としての設計
+    - id: "DB01"
+      name: "Transit Point Design"
+      weight: 15
+      must: ["db_layer_responsibility.positioning.role=transit_point"]
+      
+    # P6: 入力側の強さ（バッファリング）
+    - id: "DB02"
+      name: "Stronger Input Side"
+      weight: 12
+      must: ["db_layer_responsibility.input_requirements.buffering=required_at_edge"]
+      
+    # P5: 意味の分離（Factのみ保存）
+    - id: "DB03"
+      name: "Fact Only Storage"
+      weight: 10
+      must: ["db_layer_responsibility.semantics_separation.stored_content=fact_only"]
+      
+    # P3: ベンダロックインの回避
+    - id: "DB04"
+      name: "No Proprietary Logic"
+      weight: 10
+      must: ["db_layer_responsibility.replaceability.lock_in_avoidance.proprietary_features=forbidden"]
+
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 85

@@ -1,0 +1,85 @@
+# fileName: release-strategy-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, staging, prod]
+
+release_strategy:
+  # 1. ブランチ戦略とフロー（必須）
+  branching_model:
+    type: "github_flow|git_flow|trunk_based"
+    main_branch_protection:
+      require_pull_request_reviews: true
+      require_status_checks: true     # CIが通らないとマージ不可
+
+  # 2. CIパイプライン（必須）
+  continuous_integration:
+    linting: ["eslint", "checkstyle", "yamllint"]
+    testing:
+      unit_test_coverage_threshold: 80
+      integration_test_required: true
+    security_scan:
+      sast: true                      # 静的解析
+      dependency_scan: true           # ライブラリ脆弱性 (Renovate/Dependabot)
+      container_scan: true            # イメージ脆弱性 (Trivy等)
+    artifact_building:
+      immutability: true              # 同じタグの内容を上書きしない
+      tag_naming: "sha_commit|semantic_ver" # 'latest' タグの禁止
+
+  # 3. デプロイメント戦略（必須）
+  deployment_strategy:
+    environment: "kubernetes|serverless|vm"
+    method: "rolling|blue_green|canary"
+    blue_green_config:
+      traffic_switch: "immediate|gradual"
+    canary_config:
+      start_percentage: 10
+      step_interval_minutes: 5
+      promotion_criteria: "error_rate < 1%"
+
+  # 4. ロールバック（必須）
+  rollback:
+    automation:
+      enabled: true                   # ヘルスチェック失敗で自動戻し
+      triggers:
+        - "startup_failure"
+        - "error_rate_spike"
+    manual_procedure_defined: true    # 手動手順書の有無
+    time_to_restore_target_min: 10    # 切り戻し完了目標時間
+
+  # 5. 環境分離と構成管理（必須）
+  config_management:
+    tool: "kustomize|helm|terraform|ansible"
+    secret_management: "external_secrets|vault|encrypted_file"
+    environment_parity:               # Dev/Staging/Prodの構成差分
+      infrastructure_match: true
+      data_volume_difference: "allowed"
+
+  # 6. リリース承認（任意）
+  approval_gate:
+    staging_verification_required: true
+    production_approval: "manual_click|automated_after_canary"
+
+acceptance:
+  criteria:
+    - id: "REL01"
+      name: "Immutable Artifact (latestタグ禁止)"
+      weight: 12
+      must: ["release_strategy.continuous_integration.artifact_building.immutability=true",
+             "release_strategy.continuous_integration.artifact_building.tag_naming!=latest"]
+    - id: "REL02"
+      name: "自動ロールバックの設定"
+      weight: 10
+      must: ["release_strategy.rollback.automation.enabled=true"]
+    - id: "REL03"
+      name: "セキュリティスキャンのパイプライン組み込み"
+      weight: 8
+      must: ["release_strategy.continuous_integration.security_scan.container_scan=true",
+             "release_strategy.continuous_integration.security_scan.dependency_scan=true"]
+    - id: "REL04"
+      name: "Mainブランチ保護"
+      weight: 8
+      must: ["release_strategy.branching_model.main_branch_protection.require_status_checks=true"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 85

@@ -1,0 +1,89 @@
+# fileName: api-design-template.v1.yaml
+review_meta:
+  version: "1.0"
+  system_name: ""
+  environment_scope: [dev, staging, prod]
+
+api_design:
+  # 1. プロトコルとスタイル（必須）
+  protocol_and_style:
+    type: "REST|gRPC|GraphQL"
+    spec_standard: "OpenAPI_3.1|Proto3|Other"
+    content_type:
+      request: "application/json"
+      response: "application/json"
+    naming_convention:
+      url_path: "kebab-case|snake_case"    # 例: /users/123/login-history
+      field_names: "camelCase|snake_case" # JSONフィールド名
+
+  # 2. バージョニングと互換性（必須）
+  versioning:
+    strategy: "path|header|query"        # path (/v1/users) 推奨
+    deprecation_policy:
+      sunset_header_enabled: true        # Sunsetヘッダーで廃止日時を通知するか
+      grace_period_days: 180             # 廃止予告から停止までの猶予期間
+    breaking_change_prevention:
+      backward_compatibility_check: "automated|manual"
+
+  # 3. エラーハンドリング（必須）
+  error_handling:
+    format_standard: "RFC7807(ProblemDetails)|Custom"
+    error_codes:
+      defined: true                      # エラーコード一覧が定義されているか
+      granularity: "global|per_domain"   # E001(全体) vs USER-001(ドメイン別)
+    sensitive_data_leakage:
+      stack_trace_in_response: "never|dev_only"
+
+  # 4. 冪等性と安全性（必須）
+  safety_and_idempotency:
+    unsafe_methods: ["POST", "PUT", "PATCH", "DELETE"]
+    idempotency_key:
+      required_for: ["POST", "PATCH"]    # ネットワークタイムアウト時の再送対策
+      header_name: "Idempotency-Key"
+      ttl_seconds: 86400
+
+  # 5. セキュリティ（必須）
+  security:
+    authentication:
+      scheme: "Bearer|Basic|ApiKey"
+      source: "header|cookie"
+    authorization:
+      strategy: "RBAC|ABAC|Scope-based"
+    cors:
+      enabled: true
+      allow_origin: "strict_allowlist|wildcard_in_dev"
+    rate_limiting:
+      enabled: true
+      strategy: "per_user|per_ip"
+      header_exposure: true              # X-RateLimit-Remaining 等の返却
+
+  # 6. ページネーションとフィルタリング（任意）
+  listing_design:
+    pagination:
+      style: "cursor|offset|page_number"
+      default_limit: 20
+      max_limit: 100
+    filtering:
+      style: "query_param|rsql|scim"     # ?status=active vs ?filter=status eq active
+
+acceptance:
+  criteria:
+    - id: "A01"
+      name: "RFC7807準拠のエラーレスポンス"
+      weight: 10
+      must: ["api_design.error_handling.format_standard=RFC7807(ProblemDetails)"]
+    - id: "A02"
+      name: "更新系APIの冪等性担保"
+      weight: 10
+      must: ["api_design.safety_and_idempotency.idempotency_key.required_for!=null"]
+    - id: "A03"
+      name: "破壊的変更の防止策"
+      weight: 8
+      must: ["api_design.versioning.breaking_change_prevention.backward_compatibility_check=automated"]
+    - id: "A04"
+      name: "レートリミットの導入"
+      weight: 8
+      must: ["api_design.security.rate_limiting.enabled=true"]
+  scoring:
+    method: "weighted_sum"
+    pass_threshold: 80

@@ -1,21 +1,32 @@
 # Architecture YAML Protocols
 
-The core protocol collection for Value-Continuous AI Development (VCAD). This repository defines the boundaries, decisions, and connections that enable AI-driven coding while maintaining human governance.
+Core protocols for Value-Continuous AI Development (VCAD).
+This repository defines the decisions, boundaries, and connections that enable AI-driven coding while maintaining human governance.
 
-## Catalog
+## Core Protocols
 
-| Collection | Description | Links |
+The repository is organized into 5 main components:
+
+| Protocol | Description | Links |
 | :--- | :--- | :--- |
-| **ai-data-readiness** | AI Data Readiness Check. Quality criteria for AI-ready data formatting. | [README (JP)](collection/ai-data-readiness/README.ja.md) |
-| **api-design** | Web API Design Standards. Error handling, idempotency, security policies. | [README (JP)](collection/api-design/README.ja.md) |
-| **data-shape-design** | Data Shape Design. Strategy for choosing between wide vs long table formats. | [README (JP)](collection/data-shape-design/README.ja.md) |
-| **db-layer-responsibility** | DB Layer Responsibility. Architecture based on "DB as a Transit Point". | [README (JP)](collection/db-layer-responsibility/README.ja.md) |
-| **logger** | Structured Logging Standards. Design for searchability, monitoring, and PII protection. | [README (JP)](collection/logger/README.ja.md) |
-| **messaging-design** | Async Messaging Design. Ordering guarantees, idempotency, DLQ strategies. | [README (JP)](collection/messaging-design/README.ja.md) |
-| **ot-it-boundary-design** | OT/IT Boundary Design. Safe integration protocols between control systems and IT. | [README (JP)](collection/ot-it-boundary-design/README.ja.md) |
-| **persistence-design** | Persistence Layer Design. Store selection, schema management, backup strategies. | [README (JP)](collection/persistence-design/README.ja.md) |
-| **release-strategy** | Release Strategy. CI/CD pipelines, Blue/Green deployment, quality gates. | [README (JP)](collection/release-strategy/README.ja.md) |
-| **resiliency-design** | Resiliency Design. Circuit Breaker, Retry, Bulkhead patterns. | [README (JP)](collection/resiliency-design/README.ja.md) |
+| **Decisions** | **Why / What**. Architectural decisions, policies, and tech stacks. | [README](decisions/README.md) |
+| **Boundaries** | **Must / Must Not**. Invariant constraints, ownership boundaries, and strict rules. | [README](boundaries/README.md) |
+| **Connections** | **How / Interface**. Inter-component connections, data flows, and API contracts. | [README](connections/README.md) |
+| **Closures** | **If fails**. Error handling, recovery procedures, and responsibility closures. | [README](closures/README.md) |
+| **Components** | **Where**. Maps the above rules to the actual codebase (file paths). | [README](components/README.md) |
+
+## Legacy Collections
+
+Previous design pattern collections (Logger design, API design, etc.) have been moved to `legacy/collection`.
+
+- [Legacy Collections](legacy/collection/)
 
 ## Usage
-See `README.ja.md` in each directory for example prompts (currently in Japanese) to instruct AI agents.
+
+When using AI agents for development:
+
+1. **Decide**: Check `decisions` for architectural direction.
+2. **Define**: Define specific rules in `boundaries`, `connections`, and `closures`.
+3. **Assign**: Map these rules to file paths in `components`.
+
+This allows AI to understand "where" and "under what rules" code should be written.

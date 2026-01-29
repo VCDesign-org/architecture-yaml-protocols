@@ -1,21 +1,32 @@
 # Architecture YAML Protocols
 
-Value-Continuous AI Development (VCAD) のためのコアプロトコル集です。このリポジトリは、人間のガバナンスを維持しながらAI主導のコーディングを可能にする境界、決定、および接続を定義します。
+Value-Continuous AI Development (VCAD) のためのコアプロトコル集です。
+このリポジトリは、AIによる自律的なコーディングと、人間によるガバナンスを両立させるための「決定」「境界」「接続」などを定義・管理します。
 
-## Catalog
+## Core Protocols
 
-| Collection | Description | Links |
+このリポジトリは以下の5つの主要コンポーネントで構成されています。
+
+| Protocol | Description | Links |
 | :--- | :--- | :--- |
-| **ai-data-readiness** | AIデータ活用準備度チェック。推論可能なデータ基盤のための品質基準。 | [README](collection/ai-data-readiness/README.ja.md) |
-| **api-design** | Web API設計標準。エラーハンドリング、冪等性、セキュリティポリシーなど。 | [README](collection/api-design/README.ja.md) |
-| **data-shape-design** | データシェイプ設計。IoTデータの「縦持ち vs 横持ち」の使い分け戦略。 | [README](collection/data-shape-design/README.ja.md) |
-| **db-layer-responsibility** | DB責務と疎結合設計。「DBは通過点」という原則に基づくアーキテクチャ。 | [README](collection/db-layer-responsibility/README.ja.md) |
-| **logger** | 構造化ロギング標準。検索性、監視、PII保護を考慮したログ設計。 | [README](collection/logger/README.ja.md) |
-| **messaging-design** | 非同期メッセージング設計。順序保証、冪等性、DLQ戦略。 | [README](collection/messaging-design/README.ja.md) |
-| **ot-it-boundary-design** | OT/IT 境界設計。物理制御と情報システムの安全な連携プロトコル。 | [README](collection/ot-it-boundary-design/README.ja.md) |
-| **persistence-design** | 永続化層設計。RDBMS/NoSQL選定、スキーマ管理、バックアップ戦略。 | [README](collection/persistence-design/README.ja.md) |
-| **release-strategy** | リリース戦略。CI/CDパイプライン、Blue/Greenデプロイ、品質ゲート。 | [README](collection/release-strategy/README.ja.md) |
-| **resiliency-design** | レジリエンス設計。Circuit Breaker, Retry, Bulkhead等の障害対策。 | [README](collection/resiliency-design/README.ja.md) |
+| **Decisions** | **Why / What**. アーキテクチャ上の重要な意思決定、ポリシー、推奨/非推奨の技術スタックなどを記録します。 | [README](decisions/README.md) |
+| **Boundaries** | **Must / Must Not**. 決して破ってはいけない制約、所有権の境界、変えてはいけないルールを定義します。 | [README](boundaries/README.md) |
+| **Connections** | **How / Interface**. コンポーネント間の接続方法、データフロー、APIコントラクトを定義します。 | [README](connections/README.md) |
+| **Closures** | **If fails**. エラー処理、リカバリ手順、責任の完結（Closure）を定義します。 | [README](closures/README.md) |
+| **Components** | **Where**. 上記のルールを実際のコードベース（ファイルパス）にマッピングします。 | [README](components/README.md) |
+
+## Legacy Collections
+
+以前のデザインパターン集（Logger設計、API設計など）は `legacy/collection` に移動しました。
+
+- [Legacy Collections](legacy/collection/)
 
 ## Usage
-各ディレクトリの `README.ja.md` に、AIへの指示プロンプト例が記載されています。
+
+AIエージェントを用いて開発を行う際は、以下の流れでプロトコルを参照・適用します。
+
+1. **Decide**: `decisions` を参照し、アーキテクチャの方針を確認する。
+2. **Define**: `boundaries`, `connections`, `closures` で具体的なルールを定義する。
+3. **Assign**: `components` で対象のファイルパスにルールを紐付ける。
+
+これにより、AIは「どこに」「どのようなルールで」コードを書くべきかを理解できます。

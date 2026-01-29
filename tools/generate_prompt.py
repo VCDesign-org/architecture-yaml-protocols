@@ -30,6 +30,7 @@ def generate_prompt(comp_id, root_dir):
         bounds = load_yaml(os.path.join(root_dir, 'boundaries/boundaries.yaml'))
         conns = load_yaml(os.path.join(root_dir, 'connections/connections.yaml'))
         closer = load_yaml(os.path.join(root_dir, 'closures/closures.yaml'))
+        decisions = load_yaml(os.path.join(root_dir, 'decisions/decisions.yaml'))
     except FileNotFoundError as e:
         return f"Error loading YAML files: {e}"
 
@@ -46,6 +47,8 @@ def generate_prompt(comp_id, root_dir):
     my_bounds = get_items_by_ids(bounds, b_ids, 'boundaries')
     my_conns = get_items_by_ids(conns, c_ids, 'connections')
     my_closures = get_items_by_ids(closer, cl_ids, 'closures')
+    # Pre-fetch decision map for O(1) loop
+    decision_map = {d['id']: d for d in decisions.get('decisions', [])}
 
     # Build Prompt
     output = []
@@ -65,6 +68,12 @@ def generate_prompt(comp_id, root_dir):
         output.append("None")
     for b in my_bounds:
         output.append(f"- **{b['name']}**: {b['description']}")
+        # Include Decision context if available
+        derived_ids = b.get('derived_from_decisions', [])
+        for did in derived_ids:
+            if did in decision_map:
+                d_desc = decision_map[did].get('description', 'No description')
+                output.append(f"  - Decision ({did}): {d_desc}")
     output.append("")
 
     output.append("## Connections (Interactions)")

@@ -1,7 +1,6 @@
 # Architecture YAML Protocols
 
-A collection of YAML templates for defining system design standards, specifically for cloud-native, IoT, and microservices architectures.
-Designed to be used as "Input" for AI agents to generate design documents and implementation code.
+The core protocol collection for Value-Continuous AI Development (VCAD). This repository defines the boundaries, decisions, and connections that enable AI-driven coding while maintaining human governance.
 
 ## Catalog
 

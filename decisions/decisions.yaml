@@ -1,0 +1,75 @@
+decisions:
+  # Logger Choices
+  - id: "d-logging-01"
+    description: "ログの目的（運用/デバッグ/監査）の優先順位を決める"
+    links: { boundary: ["b-logging-01", "b-logging-02", "b-logging-05"], connection: [], closure: [] }
+  - id: "d-logging-02"
+    description: "ログ分類体系（Taxonomy）を決める"
+    links: { boundary: [], connection: [], closure: [] }
+  - id: "d-logging-03"
+    description: "イベントモデルと分類（Event Taxonomy）を定義する"
+    links: { boundary: ["b-logging-03"], connection: [], closure: [] }
+  - id: "d-logging-04"
+    description: "ログを“構造化ログ”として扱い、共通スキーマを適用するか（原則）"
+    links: { boundary: ["b-logging-04"], connection: [], closure: [] }
+  - id: "d-logging-05"
+    description: "ログの保持期間とアーカイブポリシーを決定する"
+    links: { boundary: ["b-logging-05"], connection: [], closure: [] }
+
+  # API Design Choices
+  - id: "d-api-01"
+    description: "同期/非同期の原則をどうするか（通信スタイル）"
+    links: { boundary: ["b-api-02"], connection: ["c-api-01", "c-api-02", "c-messaging-01"], closure: [] }
+  - id: "d-api-02"
+    description: "APIバージョニング戦略を決定する"
+    links: { boundary: ["b-api-01"], connection: [], closure: [] }
+  - id: "d-api-03"
+    description: "APIエラーハンドリングの標準化を行うか（原則）"
+    links: { boundary: ["b-api-03"], connection: [], closure: ["cl-c-api-01"] }
+  - id: "d-api-04"
+    description: "APIの認証・認可方式を選択する"
+    links: { boundary: [], connection: [], closure: [] }
+
+  # Persistence Choices
+  - id: "d-persistence-01"
+    description: "データストアの種別（RDB/NoSQL/etc）を選定する"
+    links: { boundary: [], connection: [], closure: [] }
+  - id: "d-persistence-02"
+    description: "データストアの配置（Managed/Self-host, Region）を決定する"
+    links: { boundary: [], connection: [], closure: [] }
+  - id: "d-persistence-03"
+    description: "データの耐久性と保全（Backup/PITR）の方針を決定する"
+    links: { boundary: [], connection: [], closure: ["cl-c-release-01"] } # Using release-01 (recovery) or define new if needed. Mapping to common recovery cl.
+  - id: "d-persistence-04"
+    description: "データモデリングの方針（正規化/集約等）を決定する"
+    links: { boundary: ["b-persistence-01", "b-persistence-02"], connection: [], closure: [] }
+  - id: "d-persistence-05"
+    description: "スキーマ変更の戦略（マイグレーション）を決定する"
+    links: { boundary: ["b-persistence-03"], connection: [], closure: [] }
+
+  # Messaging Choices
+  - id: "d-messaging-01"
+    description: "メッセージングモデル（Pub/Sub, Queue）とブローカーを選定する"
+    links: { boundary: ["b-messaging-01"], connection: ["c-messaging-01", "c-messaging-02"], closure: [] }
+  - id: "d-messaging-02"
+    description: "メッセージスキーマとガバナンス方針を決定する"
+    links: { boundary: ["b-messaging-02"], connection: [], closure: [] }
+
+  # Resiliency Choices
+  - id: "d-resiliency-01"
+    description: "タイムアウトとリトライの戦略を決定する"
+    links: { boundary: [], connection: [], closure: ["cl-c-messaging-01"] }
+  - id: "d-resiliency-02"
+    description: "サーキットブレーカーと障害遮断の方針を決定する"
+    links: { boundary: [], connection: [], closure: ["cl-c-logging-01"] } # cl-c-logging-01 was CB
+  - id: "d-resiliency-03"
+    description: "フォールバック（縮退運転）の振る舞いを決定する"
+    links: { boundary: [], connection: [], closure: ["cl-c-api-01"] }
+
+  # Release Choices
+  - id: "d-release-01"
+    description: "ブランチ戦略とデプロイフローを決定する"
+    links: { boundary: ["b-release-01", "b-release-02"], connection: ["c-release-01"], closure: [] }
+  - id: "d-release-02"
+    description: "ロールバックと自動復旧の基準を決定する"
+    links: { boundary: [], connection: [], closure: ["cl-c-release-01"] }

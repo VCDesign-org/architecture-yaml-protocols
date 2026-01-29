@@ -1,0 +1,27 @@
+closures:
+  # Resiliency Closures
+  - id: "cl-c-messaging-01"
+    description: "Exponential Backoff 付きリトライ"
+    handling: "Transient Error"
+
+  - id: "cl-c-logging-01"
+    description: "サーキットブレーカーによる遮断と自律復旧"
+    handling: "System Overload / Outage"
+
+  - id: "cl-c-api-01"
+    description: "フォールバック（キャッシュ返却またはデフォルト値）"
+    handling: "Service Unavailability"
+
+  # Consistency Closures
+  - id: "cl-c-api-02"
+    description: "冪等性チェック（Idempotency Check）による重複排除"
+    handling: "Duplicate Requests"
+
+  - id: "cl-c-messaging-02"
+    description: "Dead Letter Queue (DLQ) への退避とアラート"
+    handling: "Unprocessable Message"
+
+  # Data Closures
+  - id: "cl-c-release-01"
+    description: "Point-in-Time Recovery (PITR) / Rollback によるデータ復旧"
+    handling: "Data Corruption / accidental deletion"

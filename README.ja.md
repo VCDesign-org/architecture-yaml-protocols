@@ -1,4 +1,4 @@
-# Design YAML Collection
+# Architecture YAML Protocols
 
 システム設計、特にクラウドネイティブ、IoT、マイクロサービスアーキテクチャにおける設計標準を定義するためのYAMLテンプレート集です。
 AIエージェントに設計書や実装コードを生成させるための「Input」として使用することを想定しています。

@@ -1,0 +1,43 @@
+connections:
+  # API Connections
+  - id: "c-api-01"
+    description: "参照系（Read-only）の同期API通信"
+    from: "Client"
+    to: "Service"
+    protocol: "HTTP/GET"
+    closure: "cl-c-api-01" # Fallback
+
+  - id: "c-api-02"
+    description: "更新系（Mutation）の同期API通信"
+    from: "Client"
+    to: "Service"
+    protocol: "HTTP/POST|PUT|DELETE"
+    closure: "cl-c-api-02" # Idempotency
+
+  # Messaging Connections
+  - id: "c-messaging-01"
+    description: "メッセージの送信（Producing）"
+    from: "Producer Service"
+    to: "Message Broker"
+    protocol: "TCP/AMQP"
+    closure: "cl-c-messaging-01" # Retry with Backoff
+
+  - id: "c-messaging-02"
+    description: "メッセージの受信と処理（Consuming）"
+    from: "Message Broker"
+    to: "Consumer Service"
+    protocol: "Pull/Push"
+    closure: "cl-c-messaging-02" # DLQ
+
+  # Logging/Deployment
+  - id: "c-logging-01"
+    description: "ログストリーム転送"
+    from: "App"
+    to: "Aggregator"
+    closure: "cl-c-logging-01" # Circuit Breaker (Drop if overloaded)
+
+  - id: "c-release-01"
+    description: "CI/CD デプロイメントフロー"
+    from: "Git"
+    to: "Prod"
+    closure: "cl-c-release-01" # Manual Recovery (Rollback)

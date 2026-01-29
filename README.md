@@ -1,4 +1,4 @@
-# Design YAML Collection
+# Architecture YAML Protocols
 
 A collection of YAML templates for defining system design standards, specifically for cloud-native, IoT, and microservices architectures.
 Designed to be used as "Input" for AI agents to generate design documents and implementation code.

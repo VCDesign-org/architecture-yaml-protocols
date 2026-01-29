@@ -1,0 +1,57 @@
+kind: components
+version: "1.0"
+
+components:
+  # API Component Example
+  - id: "comp-api-01"
+    name: "Core API Service"
+    description: "メインのAPIサーバー実装領域"
+    paths:
+      include: ["src/api/**", "src/interfaces/http/**"]
+      exclude: ["src/api/internal/debug/**"]
+    applies:
+      boundaries: 
+        - "b-api-01" # Breaking Change
+        - "b-api-02" # Idempotency Key
+        - "b-api-03" # Error Standard
+      connections:
+        - "c-api-01" # Sync Query
+        - "c-api-02" # Sync Command
+      closures:
+        - "cl-c-api-01" # Fallback
+        - "cl-c-api-02" # Idempotency Check
+
+  # Messaging Worker Example
+  - id: "comp-messaging-01"
+    name: "Async Worker Service"
+    description: "非同期メッセージ処理ワーカー"
+    paths:
+      include: ["src/workers/**", "src/consumers/**"]
+      exclude: []
+    applies:
+      boundaries:
+        - "b-messaging-01" # Safety
+        - "b-messaging-02" # Contract
+      connections:
+        - "c-messaging-01" # Producer
+        - "c-messaging-02" # Consumer
+      closures:
+        - "cl-c-messaging-01" # Retry
+        - "cl-c-messaging-02" # DLQ
+
+  # Logging Library Example
+  - id: "comp-logging-01"
+    name: "Shared Logging Library"
+    description: "全社共通ログ基盤ライブラリ"
+    paths:
+      include: ["src/pkg/logger/**", "lib/logging/**"]
+      exclude: []
+    applies:
+      boundaries:
+        - "b-logging-01" # Ownership
+        - "b-logging-02" # Cleanliness
+        - "b-logging-04" # PII
+      connections:
+        - "c-logging-01" # Log Stream
+      closures:
+        - "cl-c-logging-01" # Circuit Breaker

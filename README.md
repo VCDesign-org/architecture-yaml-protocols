@@ -1,6 +1,6 @@
 # Architecture YAML Protocols
 
-Core protocols for Value-Continuous AI Development (VCAD).
+Core protocols for Value-Continuous AI Development (VC-AD).
 This repository defines the decisions, boundaries, and connections that enable AI-driven coding while maintaining human governance.
 
 ## Core Protocols

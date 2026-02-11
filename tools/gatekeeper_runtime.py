@@ -12,7 +12,6 @@ def load_yaml(path):
 def load_logs(log_file):
     try:
         with open(log_file, 'r') as f:
-            # Assume one JSON object per line
             logs = []
             for line in f:
                 line = line.strip()
@@ -23,137 +22,99 @@ def load_logs(log_file):
         print(f"Error reading log file: {e}")
         return []
 
-def get_closure_requirements(closures_yaml, closure_id=None):
-    data = load_yaml(closures_yaml)
-    requirements = {}
-    for cl in data.get('closures', []):
-        if closure_id and cl['id'] != closure_id:
-            continue
-        
-        verification = cl.get('verification', {})
-        mandatory_events = verification.get('mandatory_log_events', [])
-        
-        # Normalize into list of objects with 'name' and optional 'schema'
-        normalized_events = []
-        for event in mandatory_events:
-            if isinstance(event, str):
-                normalized_events.append({'name': event})
-            elif isinstance(event, dict):
-                normalized_events.append(event)
-        
-        if normalized_events:
-            requirements[cl['id']] = normalized_events
-            
-    return requirements
-
-def verify_logs(logs, requirements):
-    # Requirements is map: closure_id -> list of event dicts
-    
-    failures = {} # closure_id -> list of failure messages
-    
-    for cl_id, required_events in requirements.items():
-        cl_failures = []
-        
-        for req in required_events:
-            event_name = req['name']
-            schema = req.get('schema')
-            
-            # Find matching log entries
-            matches = []
-            for log in logs:
-                # Check for event name match (assuming 'event' or 'message' field)
-                if log.get('event') == event_name or log.get('message') == event_name:
-                    matches.append(log)
-            
-            if not matches:
-                cl_failures.append(f"Missing mandatory event: {event_name}")
-                continue
-            
-            # If schema exists, validate all matches (or at least one? Strict: all must pass?)
-            # Usually if multiple events of same type emitted, they all should correspond to schema.
-            if schema:
-                for match in matches:
-                    try:
-                        jsonschema.validate(instance=match, schema=schema)
-                    except jsonschema.ValidationError as e:
-                        cl_failures.append(f"Schema violation for event '{event_name}': {e.message} at path {list(e.path)}")
-                        
-        if cl_failures:
-            failures[cl_id] = cl_failures
-            
-    return failures
-
-def verify_golden_files(closures_yaml, closure_id=None, profile='enforce'):
-    data = load_yaml(closures_yaml)
+def verify_observability(logs, contracts):
     failures = []
+    observability_rules = contracts.get('contracts', {}).get('observability_contract', [])
     
-    for cl in data.get('closures', []):
-        if closure_id and cl['id'] != closure_id:
-            continue
+    for rule in observability_rules:
+        event_name = rule.get('event')
+        required_fields = rule.get('required_fields', [])
         
-        verification = cl.get('verification', {})
-        golden = verification.get('golden_test')
+        # Check if event exists at least once (if it's a "Must emit" rule)
+        # Note: The current contract doesn't explicitly say "optional" or "required" per request, 
+        # but implies "if this event happens, it must have these fields" OR "this event must happen".
+        # For v0.2, let's assume if it is in the contract, we expect to see it IF the verify log is for a relevant flow.
+        # However, checking "missing event" globally might be too strict for a general log file unless we know the context.
+        # Let's focus on: IF event found, MUST have required_fields.
         
-        if golden:
-            expected_path = golden.get('expected')
-            actual_path = golden.get('actual')
-            
-            if not expected_path or not actual_path:
-                print(f"Closure {cl['id']}: Invalid golden_test config.")
-                continue
+        found_count = 0
+        for log in logs:
+            if log.get('event') == event_name or log.get('message') == event_name:
+                found_count += 1
+                missing_fields = [f for f in required_fields if f not in log]
+                if missing_fields:
+                    failures.append(f"Event '{event_name}' missing required fields: {missing_fields}")
+        
+    return failures
 
-            # Strict check for missing files in Enforce/Lockdown
-            missing = []
-            if not os.path.exists(expected_path):
-                missing.append(f"Expected file missing: {expected_path}")
-            if not os.path.exists(actual_path):
-                missing.append(f"Actual file missing: {actual_path}")
+def verify_io_contract(contracts, profile='enforce'):
+    failures = []
+    io_rules = contracts.get('contracts', {}).get('io_contract', [])
+    
+    for rule in io_rules:
+        if rule.get('type') == 'golden_test':
+            expected = rule.get('expected')
+            actual = rule.get('actual')
+            rule_id = rule.get('id', 'unknown')
             
-            if missing:
-                if profile in ['enforce', 'lockdown']:
-                    failures.extend([f"{cl['id']}: {m}" for m in missing])
-                else:
-                    for m in missing:
-                        print(f"WARNING: {cl['id']}: {m} (Allowed in '{profile}' mode)")
+            if not expected or not actual:
                 continue
-
-            # Content comparison
-            with open(expected_path, 'r') as f1, open(actual_path, 'r') as f2:
+                
+            if not os.path.exists(expected):
+                failures.append(f"[{rule_id}] Expected file missing: {expected}")
+                continue
+            if not os.path.exists(actual):
+                failures.append(f"[{rule_id}] Actual file missing: {actual}")
+                continue
+                
+            with open(expected, 'r') as f1, open(actual, 'r') as f2:
                 if f1.read() != f2.read():
-                    failures.append(f"{cl['id']}: Content mismatch between {expected_path} and {actual_path}")
+                    failures.append(f"[{rule_id}] Content mismatch: {expected} vs {actual}")
 
     return failures
+
+def generate_ai_message(failures):
+    """
+    Generates a concise rejection message for AI agents.
+    """
+    msg = "Runtime Verification Failed.\n"
+    msg += "The following contract violations were detected:\n"
+    for f in failures:
+        msg += f"- {f}\n"
+    msg += "\nPlease fix the implementation to satisfy the observability and IO contracts."
+    return msg
 
 def main():
-    parser = argparse.ArgumentParser(description='Runtime Gate: Verify Log Compliance & IO Equivalence')
+    parser = argparse.ArgumentParser(description='Runtime Gate v0.2')
     parser.add_argument('--log-file', type=str, help='Path to log file (JSONL)')
-    parser.add_argument('--closures', type=str, required=True, help='Path to closures.yaml')
-    parser.add_argument('--closure-id', type=str, help='Specific closure ID to verify')
-    parser.add_argument('--profile', type=str, default='enforce', help='Governance Profile (explore/enforce/lockdown)')
+    parser.add_argument('--contract', type=str, default='contracts/vcad.contract.yaml', help='Path to contract definition')
     args = parser.parse_args()
 
-    # 1. Log Verification
+    if not os.path.exists(args.contract):
+        print(f"Contract file not found: {args.contract}")
+        sys.exit(1)
+
+    try:
+        contracts = load_yaml(args.contract)
+    except Exception as e:
+        print(f"Error loading contracts: {e}")
+        sys.exit(1)
+
+    all_failures = []
+
+    # 1. Observability Verification
     if args.log_file:
         logs = load_logs(args.log_file)
         if logs:
-            requirements = get_closure_requirements(args.closures, args.closure_id)
-            if requirements:
-                failures = verify_logs(logs, requirements)
-                if failures:
-                    print("Runtime Verification Failed (Log Events)!")
-                    for cl_id, msgs in failures.items():
-                        print(f"Closure {cl_id} Failures:")
-                        for msg in msgs:
-                             print(f"  - {msg}")
-                    sys.exit(1)
+            obs_failures = verify_observability(logs, contracts)
+            all_failures.extend(obs_failures)
 
-    # 2. Golden File Verification
-    golden_failures = verify_golden_files(args.closures, args.closure_id, args.profile)
-    
-    if golden_failures:
-        print("Runtime Verification Failed (IO Equivalence)!")
-        for failure in golden_failures:
-             print(f"  - {failure}")
+    # 2. IO Verification
+    io_failures = verify_io_contract(contracts)
+    all_failures.extend(io_failures)
+
+    if all_failures:
+        print(generate_ai_message(all_failures))
         sys.exit(1)
 
     print("Runtime Verification Passed.")

@@ -10,10 +10,11 @@ The repository is organized into 5 main components:
 | Protocol | Description | Links |
 | :--- | :--- | :--- |
 | **Decisions** | **Why / What**. Architectural decisions, policies, and tech stacks. | [README](decisions/README.md) |
-| **Boundaries** | **Must / Must Not**. Invariant constraints, ownership boundaries, and strict rules. | [README](boundaries/README.md) |
+| **Contracts** | **Must / Must Not**. Language-agnostic policies (Resources, Side-Effects) and IO contracts. (v0.2+) | [README](contracts/vcad.contract.yaml) |
 | **Connections** | **How / Interface**. Inter-component connections, data flows, and API contracts. | [README](connections/README.md) |
 | **Closures** | **If fails**. Error handling, recovery procedures, and responsibility closures. | [README](closures/README.md) |
 | **Components** | **Where**. Maps the above rules to the actual codebase (file paths). | [README](components/README.md) |
+| **Tools** | **Enforcement**. Gatekeeper (Lint/Runtime/Process) to enforce the above contracts. | [Source](tools/) |
 
 ## Legacy Collections
 

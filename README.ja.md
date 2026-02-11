@@ -10,10 +10,11 @@ Value-Continuous AI Development (VC-AD) のためのコアプロトコル集で�
 | Protocol | Description | Links |
 | :--- | :--- | :--- |
 | **Decisions** | **Why / What**. アーキテクチャ上の重要な意思決定、ポリシー、推奨/非推奨の技術スタックなどを記録します。 | [README](decisions/README.md) |
-| **Boundaries** | **Must / Must Not**. 決して破ってはいけない制約、所有権の境界、変えてはいけないルールを定義します。 | [README](boundaries/README.md) |
+| **Contracts** | **Must / Must Not**. 言語非依存のポリシー（リソース、副作用）やIO契約などを集約定義します。(v0.2+) | [README](contracts/vcad.contract.yaml) |
 | **Connections** | **How / Interface**. コンポーネント間の接続方法、データフロー、APIコントラクトを定義します。 | [README](connections/README.md) |
 | **Closures** | **If fails**. エラー処理、リカバリ手順、責任の完結（Closure）を定義します。 | [README](closures/README.md) |
 | **Components** | **Where**. 上記のルールを実際のコードベース（ファイルパス）にマッピングします。 | [README](components/README.md) |
+| **Tools** | **Enforcement**. 上記のコントラクトを強制するためのGatekeeperツール群（Lint/Runtime/Process）。 | [Source](tools/) |
 
 ## Legacy Collections
 

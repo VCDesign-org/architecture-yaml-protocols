@@ -31,8 +31,8 @@ def check_protocol_changes(files):
     for f in files:
         if f.endswith('.yaml') or f.endswith('.yml'):
              protocol_files.append(f)
-             if "boundaries.yaml" in f or "boundaries/" in f:
-                 boundary_files.append(f)
+             if "vcad.contract.yaml" in f:
+                 boundary_files.append(f) # Treat main contract as boundary-level critical
         elif "examples/golden" in f:
              golden_files.append(f)
             

@@ -13,15 +13,6 @@ def find_component(components_data, comp_id):
             return c
     return None
 
-def get_items_by_ids(data, ids, kind_key='boundaries'):
-    items = []
-    source_list = data.get(kind_key, [])
-    for item_id in ids:
-        found = next((x for x in source_list if x['id'] == item_id), None)
-        if found:
-            items.append(found)
-    return items
-
 def get_enforcement_text(check_type, value):
     """
     Returns a descriptive warning based on the check value.
@@ -47,9 +38,8 @@ def generate_prompt(comp_id, root_dir, profile_name="enforce"):
     # Load all data
     try:
         comps = load_yaml(os.path.join(root_dir, 'components/components.yaml'))
-        bounds = load_yaml(os.path.join(root_dir, 'boundaries/boundaries.yaml'))
+        contracts = load_yaml(os.path.join(root_dir, 'contracts/vcad.contract.yaml'))
         conns = load_yaml(os.path.join(root_dir, 'connections/connections.yaml'))
-        closer = load_yaml(os.path.join(root_dir, 'closures/closures.yaml'))
         decisions = load_yaml(os.path.join(root_dir, 'decisions/decisions.yaml'))
     except FileNotFoundError as e:
         return f"Error loading YAML files: {e}"
@@ -57,18 +47,6 @@ def generate_prompt(comp_id, root_dir, profile_name="enforce"):
     comp = find_component(comps, comp_id)
     if not comp:
         return f"Component not found: {comp_id}"
-
-    # Resolve links
-    applies = comp.get('applies', {})
-    b_ids = applies.get('boundaries', [])
-    c_ids = applies.get('connections', [])
-    cl_ids = applies.get('closures', [])
-    
-    my_bounds = get_items_by_ids(bounds, b_ids, 'boundaries')
-    my_conns = get_items_by_ids(conns, c_ids, 'connections')
-    my_closures = get_items_by_ids(closer, cl_ids, 'closures')
-    # Pre-fetch decision map for O(1) loop
-    decision_map = {d['id']: d for d in decisions.get('decisions', [])}
 
     # Build Prompt
     output = []
@@ -100,62 +78,52 @@ def generate_prompt(comp_id, root_dir, profile_name="enforce"):
         output.append(f"- **Process Gate**: {process_rule}")
         output.append("")
 
-    output.append("## Boundaries (MUST/MUST NOT)")
+    output.append("## Contracts (MUST/MUST NOT)")
     # Add warnings only if enforcement is Block/Strict
     if profile.get('checks', {}).get('static') in ['block', 'strict']:
         output.append("> [!WARNING]")
-        output.append("> These boundaries are enforced by `gatekeeper_lint.py`. Violations will be automatically rejected.")
+        output.append("> These contracts are enforced by `gatekeeper_core.py`. Violations will be automatically rejected.")
         output.append("")
     
-    if not my_bounds:
-        output.append("None")
-    for b in my_bounds:
-        output.append(f"- **{b['name']}**: {b['description']}")
-        if 'constraints' in b:
-             constraints = b['constraints']
-             for lang, rules in constraints.items():
-                 output.append(f"  - [CONSTRAINT] {lang}: Forbidden {rules.get('forbidden_symbols', [])}")
-        
-        # Include Decision context if available
-        derived_ids = b.get('derived_from_decisions', [])
-        for did in derived_ids:
-            if did in decision_map:
-                d_desc = decision_map[did].get('description', 'No description')
-                output.append(f"  - Decision ({did}): {d_desc}")
-    output.append("")
-
-    output.append("## Connections (Interactions)")
-    if not my_conns:
-        output.append("None")
-    for c in my_conns:
-        output.append(f"- **{c['id']}** ({c['protocol']}): {c['description']}")
-        output.append(f"  - From: {c['from']} -> To: {c['to']}")
-    output.append("")
-
-    output.append("## Closures (Failure Handling)")
-    if not my_closures:
-        output.append("None")
-    for cl in my_closures:
-        output.append(f"- **{cl['id']}**: {cl['description']}")
-        output.append(f"  - Handling: {cl['handling']}")
-        if 'verification' in cl:
-            v = cl['verification']
-            # Inject Observability Contract
-            mandatory = v.get('mandatory_log_events', [])
-            
-            # Format mandatory logs nicely
-            if mandatory:
-                log_names = []
-                for m in mandatory:
-                    if isinstance(m, dict):
-                        log_names.append(m['name'])
-                    else:
-                        log_names.append(m)
-                output.append(f"  - **[OBSERVABILITY CONTRACT]** Mandatory Logs: {log_names}")
-            
-            output.append(f"  - [VERIFICATION] Exit Code: {v.get('exit_code')}")
-            output.append(f"  - [VERIFICATION] Test: `{v.get('test_command')}`")
+    policies = contracts.get('policies', {})
     
+    output.append("### Resource Policies")
+    for rp in policies.get('resource_policy', []):
+        output.append(f"- **{rp['category']}** ({rp.get('level', 'restricted').upper()}): {rp['description']}")
+
+    output.append("")
+    output.append("### Side-Effect Policies")
+    for sp in policies.get('side_effect_policy', []):
+        output.append(f"- **{sp['category']}** ({sp.get('level', 'restricted').upper()}): {sp['description']}")
+        
+    output.append("")
+    output.append("## Connections (Interactions)")
+    # Filter connections where this component is 'from' or 'to'?
+    # Or just list all linked ones if we had linking logic. 
+    # Current component.yaml has 'applies.connections' which mimics old style.
+    # For now, let's just dump what's in 'applies' if it exists.
+    # But since we removed specific IDs from boundaries, we rely on Categories now.
+    # Connections still have IDs in connections.yaml.
+    
+    c_ids = comp.get('applies', {}).get('connections', [])
+    if c_ids:
+        for c in conns.get('connections', []):
+            if c['id'] in c_ids:
+                output.append(f"- **{c['id']}** ({c['protocol']}): {c['description']}")
+                output.append(f"  - From: {c['from']} -> To: {c['to']}")
+
+    output.append("")
+    output.append("## Verification Contracts")
+    
+    # Observability
+    obs_contracts = contracts.get('contracts', {}).get('observability_contract', [])
+    if obs_contracts:
+        output.append("### Observability Contract")
+        for obs in obs_contracts:
+            output.append(f"- Event: **{obs['event']}**")
+            output.append(f"  - Required Fields: {obs.get('required_fields')}")
+            output.append(f"  - Description: {obs.get('description')}")
+            
     return "\n".join(output)
 
 if __name__ == "__main__":

@@ -1,0 +1,48 @@
+schema_version: "0.2.0"
+
+policies:
+  resource_policy:
+    - category: "dynamic_allocation"
+      description: "Direct memory management (malloc/free/new/delete) is prohibited. Use smart pointers or managed memory."
+      level: "prohibited"
+      exception_process:
+        approval_role: "Architect"
+        decision_feedback_required: true
+
+  side_effect_policy:
+    - category: "filesystem_write"
+      description: "Direct filesystem write operations are restricted to authorized abstraction layers."
+      level: "restricted"
+      # Adapters will use these to identify violations
+      tags: ["fs", "io"]
+      exception_process:
+        approval_role: "Tech Lead"
+        decision_feedback_required: true
+
+    - category: "network_access"
+      description: "Direct network socket access is prohibited. Use authorized API clients."
+      level: "prohibited"
+      tags: ["net", "socket", "http"]
+      exception_process:
+        approval_role: "Tech Lead"
+        decision_feedback_required: true
+
+    - category: "logging_content"
+      description: "Operational logs must not contain stack traces or raw PII."
+      level: "restricted"
+      tags: ["log", "pii"]
+      # Specific patterns can be hinted here for Generic Adapter
+      forbidden_patterns: ["printStackTrace", "console.trace", "print"] 
+
+contracts:
+  observability_contract:
+    - event: "RetryAttempted"
+      description: "Must emit RetryAttempted event on transient failures."
+      required_fields: ["event", "attempt", "error"]
+      
+  io_contract:
+    - type: "golden_test"
+      id: "retry-logic-verification"
+      description: "Verify retry logic output matches golden master."
+      expected: "examples/golden/retry_output.txt"
+      actual: "logs/retry_output.txt"

@@ -1,0 +1,24 @@
+kind: profile
+version: "1.0"
+
+profiles:
+  explore:
+    description: "初期開発フェーズ。制約違反は警告のみで、自律的な探索を優先する。"
+    checks:
+      static: "warn"    # Gatekeeper Lint
+      runtime: "warn"   # Runtime Verification
+      process: "none"   # PR Description Check
+
+  enforce:
+    description: "安定化フェーズ。制約違反はブロックされ、PR修正時にはTODOの更新が求められる。"
+    checks:
+      static: "block"
+      runtime: "block"
+      process: "require_todo_update"
+
+  lockdown:
+    description: "リリースフェーズ。厳格な管理下で、例外には承認が必要。"
+    checks:
+      static: "strict"  # No exceptions allowed without approval
+      runtime: "strict"
+      process: "require_approval"

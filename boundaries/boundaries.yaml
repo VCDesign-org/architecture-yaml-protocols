@@ -39,6 +39,35 @@ boundaries:
       approval_role: "Architect"
       update_target: "decisions/d-memory-01.yaml"
 
+  # Side-Effect Boundaries
+  - id: "b-side-effects-01"
+    name: "fs-access-prohibition"
+    description: "ファイルシステムへの直接アクセス（open, remove等）を行ってはならない（抽象化レイヤーを介する）"
+    type: "prohibition"
+    derived_from_decisions: []
+    constraints:
+      python:
+        forbidden_symbols: ["open", "os.remove", "os.unlink", "shutil.rmtree"]
+      c_cpp:
+        forbidden_symbols: ["fopen", "remove", "unlink"]
+    exception_protocol:
+      decision_feedback_required: true
+      approval_role: "Tech Lead"
+      update_target: "decisions/d-fs-01.yaml"
+
+  - id: "b-side-effects-02"
+    name: "network-access-prohibition"
+    description: "ネットワークへの直接アクセス（socket, requests等）を行ってはならない（APIクライアントを介する）"
+    type: "prohibition"
+    derived_from_decisions: []
+    constraints:
+      python:
+        forbidden_symbols: ["requests.get", "requests.post", "urllib.request", "socket.socket"]
+    exception_protocol:
+      decision_feedback_required: true
+      approval_role: "Tech Lead"
+      update_target: "decisions/d-net-01.yaml"
+
   - id: "b-logging-04"
     name: "pii-privacy-protection"
     description: "PII（個人情報）をマスクせずに記録してはならない"

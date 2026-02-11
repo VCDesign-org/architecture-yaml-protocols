@@ -132,5 +132,13 @@ def main():
         print("No issues found.")
         sys.exit(0)
 
+# Semgrep Helper (Planned Integration)
+def generate_semgrep_config(all_constraints):
+    # This function would generate a temporary semgrep YAML config
+    # based on the constraints.
+    # For now, we rely on the Universal Scanner (AST/Regex) as the primary check.
+    # Future enhancement: if semgrep is installed, use it for deeper analysis.
+    pass
+
 if __name__ == "__main__":
     main()

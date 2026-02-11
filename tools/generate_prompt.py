@@ -14,7 +14,6 @@ def find_component(components_data, comp_id):
     return None
 
 def get_items_by_ids(data, ids, kind_key='boundaries'):
-    # data is like { 'boundaries': [...] }
     items = []
     source_list = data.get(kind_key, [])
     for item_id in ids:
@@ -23,7 +22,12 @@ def get_items_by_ids(data, ids, kind_key='boundaries'):
             items.append(found)
     return items
 
-def generate_prompt(comp_id, root_dir):
+def generate_prompt(comp_id, root_dir, profile_name="enforce"):
+    # Load Governance Profile
+    profile_path = os.path.join(root_dir, 'profile/profile.yaml')
+    profile_data = load_yaml(profile_path) if os.path.exists(profile_path) else {}
+    profile = profile_data.get('profiles', {}).get(profile_name, {})
+
     # Load all data
     try:
         comps = load_yaml(os.path.join(root_dir, 'components/components.yaml'))
@@ -44,8 +48,6 @@ def generate_prompt(comp_id, root_dir):
     c_ids = applies.get('connections', [])
     cl_ids = applies.get('closures', [])
     
-    # Contracts are now merged into boundaries/closures in components.yaml
-    
     my_bounds = get_items_by_ids(bounds, b_ids, 'boundaries')
     my_conns = get_items_by_ids(conns, c_ids, 'connections')
     my_closures = get_items_by_ids(closer, cl_ids, 'closures')
@@ -64,6 +66,17 @@ def generate_prompt(comp_id, root_dir):
     for p in comp['paths']['exclude']:
         output.append(f"- Exclude: `{p}`")
     output.append("")
+
+    # Governance Profile Section
+    if profile:
+        output.append(f"## Governance Profile: {profile_name.upper()}")
+        output.append(f"> {profile.get('description', '')}")
+        output.append("### Enforcement Levels")
+        checks = profile.get('checks', {})
+        output.append(f"- **Static Analysis**: {checks.get('static', 'unknown')}")
+        output.append(f"- **Runtime Verification**: {checks.get('runtime', 'unknown')}")
+        output.append(f"- **Process Gate**: {checks.get('process', 'unknown')}")
+        output.append("")
 
     output.append("## Boundaries (MUST/MUST NOT)")
     output.append("> [!WARNING]")
@@ -103,8 +116,12 @@ def generate_prompt(comp_id, root_dir):
         output.append(f"  - Handling: {cl['handling']}")
         if 'verification' in cl:
             v = cl['verification']
+            # Inject Observability Contract
+            mandatory = v.get('mandatory_log_events', [])
+            if mandatory:
+                output.append(f"  - **[OBSERVABILITY CONTRACT]** Mandatory Logs: {mandatory}")
+            
             output.append(f"  - [VERIFICATION] Exit Code: {v.get('exit_code')}")
-            output.append(f"  - [VERIFICATION] Logs: {v.get('mandatory_log_events', [])}")
             output.append(f"  - [VERIFICATION] Test: `{v.get('test_command')}`")
     
     return "\n".join(output)
@@ -113,6 +130,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate AI Prompt for Component')
     parser.add_argument('component_id', type=str, help='Component ID (e.g., comp-api-01)')
     parser.add_argument('--root', type=str, default='.', help='Root directory of yaml-collection')
+    parser.add_argument('--profile', type=str, default='enforce', help='Governance Profile (explore/enforce/lockdown)')
     args = parser.parse_args()
 
-    print(generate_prompt(args.component_id, args.root))
+    print(generate_prompt(args.component_id, args.root, profile_name=args.profile))

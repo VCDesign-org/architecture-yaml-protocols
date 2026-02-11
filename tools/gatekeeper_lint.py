@@ -18,16 +18,153 @@ def get_constraints(boundaries_path):
         data = load_yaml(boundaries_path)
     except Exception as e:
         print(f"Error loading boundaries: {e}")
-        return {}
+        return []
     
-    constraints = {}
+    # Return list of constraint objects: { 'lang': 'python', 'forbidden': [], 'allowed': [] }
+    constraint_rules = []
+    
     for b in data.get('boundaries', []):
         if 'constraints' in b:
             for lang, rules in b['constraints'].items():
-                if lang not in constraints:
-                    constraints[lang] = set()
-                constraints[lang].update(rules.get('forbidden_symbols', []))
-    return constraints
+                forbidden = rules.get('forbidden_symbols', [])
+                allowed = rules.get('allowed_scopes', [])
+                if forbidden:
+                    constraint_rules.append({
+                        'lang': lang,
+                        'forbidden': forbidden,
+                        'allowed': allowed
+                    })
+    return constraint_rules
+
+# --- AST / Regex (Fallback & Legacy) ---
+# (Keeping AST/Regex logic as fallback, but simplified calling convention)
+
+# ... (ForbiddenSymbolVisitor, check_python_ast, check_text_regex remain valid helpers) ...
+
+# --- Semgrep Integration ---
+
+def generate_semgrep_config(constraint_rules):
+    """
+    Generates a Semgrep YAML config structure from constraint rules.
+    Returns the config dict.
+    """
+    rules = []
+    
+    for idx, cron in enumerate(constraint_rules):
+        lang = cron['lang']
+        forbidden = cron['forbidden']
+        allowed = cron['allowed']
+        
+        semgrep_langs = []
+        if lang == 'python': semgrep_langs = ['python']
+        elif lang == 'c_cpp': semgrep_langs = ['c', 'cpp']
+        else: 
+            # print(f"DEBUG: Skipping unsupported lang {lang}")
+            continue # Skip unsupported for semgrep gen
+        
+        for symbol in forbidden:
+            # print(f"DEBUG: Processing symbol {symbol}")
+            rule_id = f"boundary-constraint-{idx}-{symbol.replace('.', '-')}"
+            
+            # Construct patterns
+            patterns = []
+            
+            # 1. Function Call / Attribute Access (symbol(...), obj.symbol)
+            # symbol(...) matches distinct calls. 
+            # If symbol contains dot (requests.get), Semgrep handles it intelligently.
+            patterns.append({'pattern': f"{symbol}(...)"})
+            
+            # 2. Import usage (import symbol, from symbol import ..., from ... import symbol)
+            # Only relevant for Python. Avoid generating invalid syntax for dotted symbols (e.g. 'import requests.get')
+            if lang == 'python':
+                # Check if symbol is a simple identifier (no dots)
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', symbol):
+                    patterns.append({'pattern': f"import {symbol}"})
+                    patterns.append({'pattern': f"from {symbol} import ..."})
+                    patterns.append({'pattern': f"from ... import {symbol}"})
+                
+                # Catch attribute usage or direct usage
+                patterns.append({'pattern': f"{symbol}"}) 
+
+            # Combine into pattern-either
+            main_pattern = {'pattern-either': patterns}
+            
+            # Construct rule object
+            rule_obj = {
+                'id': rule_id,
+                'patterns': [main_pattern],
+                'message': f"Forbidden symbol '{symbol}' detected.",
+                'languages': semgrep_langs,
+                'severity': 'ERROR'
+            }
+            
+            # Add exceptions (allowed scopes)
+            if allowed:
+                for allow in allowed:
+                    rule_obj['patterns'].append({'pattern-not': f"{allow}(...)"})
+                    if lang == 'python':
+                        rule_obj['patterns'].append({'pattern-not': f"{allow}"})
+
+            rules.append(rule_obj)
+            
+    return {'rules': rules}
+
+# --- AST / Regex (Fallback & Legacy) ---
+# ...
+
+def run_semgrep(filepath, config_dict):
+    """
+    Runs semgrep on the filepath using the provided config dict.
+    Returns list of (line, symbol) tuples.
+    """
+    # Check if semgrep is installed
+    if not shutil.which('semgrep'):
+        return None 
+    
+    issues = []
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_config:
+        yaml.dump(config_dict, tmp_config)
+        config_path = tmp_config.name
+        
+    try:
+        # Run semgrep with JSON output
+        cmd = ['semgrep', '--config', config_path, '--json', filepath]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0 and result.returncode != 1: 
+             print(f"DEBUG: Semgrep failed with code {result.returncode}")
+             print("STDERR:", result.stderr)
+             # print("DEBUG: Config content:")
+             # with open(config_path, 'r') as f: print(f.read())
+             
+             # pass to allow partial results or just continue
+             pass
+             
+        try:
+            output = json.loads(result.stdout)
+            results = output.get('results', [])
+            for res in results:
+                line = res['start']['line']
+                msg = res['extra']['message']
+                # Extract symbol from message or ID? 
+                match = re.search(r"Forbidden symbol '(.*)' detected", msg)
+                symbol = match.group(1) if match else "unknown"
+                issues.append((line, symbol))
+                
+        except json.JSONDecodeError:
+            print(f"Failed to parse semgrep output for {filepath}")
+            # print("STDOUT:", result.stdout)
+
+    except Exception as e:
+        print(f"Error running semgrep: {e}")
+        
+    finally:
+        if os.path.exists(config_path):
+            os.remove(config_path)
+        
+    return issues
 
 # --- AST / Regex (Fallback & Legacy) ---
 
@@ -81,98 +218,6 @@ def check_text_regex(filepath, forbidden_symbols):
         print(f"Error reading {filepath}: {e}")
     return issues
 
-# --- Semgrep Integration ---
-
-def generate_semgrep_config(constraints):
-    """
-    Generates a Semgrep YAML config structure from constraints.
-    Returns the config dict.
-    """
-    rules = []
-    
-    # Python Rules
-    if 'python' in constraints:
-        for symbol in constraints['python']:
-            # Create a rule for each forbidden symbol
-            # Heuristic: if symbol has a dot, use it as is (e.g. requests.get)
-            # If no dot, it might be a function call or pattern.
-            
-            rule_id = f"forbidden-python-{symbol.replace('.', '-')}"
-            pattern = f"{symbol}(...)"
-            
-            rules.append({
-                'id': rule_id,
-                'patterns': [{'pattern': pattern}],
-                'message': f"Forbidden symbol '{symbol}' detected.",
-                'languages': ['python'],
-                'severity': 'ERROR'
-            })
-
-    # C/C++ Rules
-    if 'c_cpp' in constraints:
-        for symbol in constraints['c_cpp']:
-            rule_id = f"forbidden-cpp-{symbol}"
-            pattern = f"{symbol}(...)"
-            
-            rules.append({
-                'id': rule_id,
-                'patterns': [{'pattern': pattern}],
-                'message': f"Forbidden symbol '{symbol}' detected.",
-                'languages': ['c', 'cpp'],
-                'severity': 'ERROR'
-            })
-            
-    return {'rules': rules}
-
-def run_semgrep(filepath, config_dict):
-    """
-    Runs semgrep on the filepath using the provided config dict.
-    Returns list of (line, symbol) tuples.
-    """
-    # Check if semgrep is installed
-    if not shutil.which('semgrep'):
-        return None 
-
-    issues = []
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_config:
-        yaml.dump(config_dict, tmp_config)
-        config_path = tmp_config.name
-        
-    try:
-        # Run semgrep with JSON output
-        cmd = ['semgrep', '--config', config_path, '--json', filepath]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0 and result.returncode != 1: 
-             # semgrep exit code 0=ok, 1=findings (depending on version, strictness)
-             # actually usually 0 even with findings unless --error
-             # We parse JSON anyway.
-             pass
-             
-        try:
-            output = json.loads(result.stdout)
-            results = output.get('results', [])
-            for res in results:
-                line = res['start']['line']
-                msg = res['extra']['message']
-                # Extract symbol from message or ID? 
-                # Message is "Forbidden symbol 'X' detected."
-                match = re.search(r"Forbidden symbol '(.*)' detected", msg)
-                symbol = match.group(1) if match else "unknown"
-                issues.append((line, symbol))
-                
-        except json.JSONDecodeError:
-            print(f"Failed to parse semgrep output for {filepath}")
-
-    except Exception as e:
-        print(f"Error running semgrep: {e}")
-        
-    finally:
-        os.remove(config_path)
-        
-    return issues
-
 # --- Main Driver ---
 
 EXTENSION_MAP = {
@@ -184,26 +229,34 @@ EXTENSION_MAP = {
     '.hpp': 'c_cpp'
 }
 
-def check_file(filepath, all_constraints):
+def check_file(filepath, constraint_rules):
     ext = os.path.splitext(filepath)[1]
-    lang = EXTENSION_MAP.get(ext)
+    target_lang = EXTENSION_MAP.get(ext)
     
-    if not lang or lang not in all_constraints:
+    if not target_lang:
+        return []
+
+    # Filter constraints relevant to this language
+    relevant_rules = [r for r in constraint_rules if r['lang'] == target_lang]
+    if not relevant_rules:
         return []
 
     # Try Semgrep first
-    semgrep_config = generate_semgrep_config(all_constraints)
+    semgrep_config = generate_semgrep_config(relevant_rules)
     semgrep_issues = run_semgrep(filepath, semgrep_config)
     
     if semgrep_issues is not None:
         return semgrep_issues
     
-    # Fallback
-    forbidden = all_constraints[lang]
-    if lang == 'python':
-        return check_python_ast(filepath, forbidden)
+    # Fallback (Legacy) - flatten forbidden symbols
+    all_forbidden = set()
+    for r in relevant_rules:
+        all_forbidden.update(r['forbidden'])
+        
+    if target_lang == 'python':
+        return check_python_ast(filepath, list(all_forbidden))
     else:
-        return check_text_regex(filepath, forbidden)
+        return check_text_regex(filepath, list(all_forbidden))
 
 def main():
     parser = argparse.ArgumentParser(description='Universal Gatekeeper: Governance Scanner')
@@ -211,8 +264,13 @@ def main():
     parser.add_argument('--boundaries', type=str, required=True, help='Path to boundaries.yaml')
     args = parser.parse_args()
 
-    all_constraints = get_constraints(args.boundaries)
-    if not all_constraints:
+    # Get structured constraints
+    print(f"DEBUG: Loading constraints from {args.boundaries}")
+    constraint_rules = get_constraints(args.boundaries)
+    print(f"DEBUG: Found {len(constraint_rules)} constraint rules")
+    
+    if not constraint_rules:
+        # Assuming empty is valid if no boundaries defined, but let's exit success
         sys.exit(0)
 
     # Check for target existence
@@ -226,13 +284,12 @@ def main():
     elif os.path.isdir(args.target):
         for root, _, files in os.walk(args.target):
             for file in files:
-                # filter by supported extensions?
                  if os.path.splitext(file)[1] in EXTENSION_MAP:
                      targets.append(os.path.join(root, file))
     
     has_error = False
     for t in targets:
-        issues = check_file(t, all_constraints)
+        issues = check_file(t, constraint_rules)
         if issues:
             has_error = True
             print(f"Issues found in {t}:")

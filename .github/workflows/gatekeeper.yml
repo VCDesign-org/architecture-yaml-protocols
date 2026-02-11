@@ -1,0 +1,72 @@
+name: Gatekeeper Governance
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+  push:
+    branches: [ "main", "develop" ]
+
+jobs:
+  governance-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Needed for checking changed files
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml jsonschema semgrep
+
+      # 1. Referential Integrity
+      - name: Validate Protocol Links
+        run: |
+          python3 tools/validate_links.py
+
+      # 2. Static Analysis (Semgrep + Universal)
+      - name: Gatekeeper Lint
+        run: |
+          # Scan all project files (excluding tools/ and tests/ if needed)
+          python3 tools/gatekeeper_lint.py . --boundaries boundaries/boundaries.yaml
+
+      # 3. Runtime Verification (IO Equivalence & Logs)
+      - name: Runtime Gate (IO Equivalence)
+        run: |
+          # Use 'enforce' profile to ensure strict checking (fails on missing files)
+          python3 tools/gatekeeper_runtime.py --closures closures/closures.yaml --profile enforce
+
+      # 4. Process Gate (PR Only)
+      - name: Process Gate
+        if: github.event_name == 'pull_request'
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }} | tr '\n' ',')
+          
+          # Get PR description
+          # In Actions, PR body is in event.json
+          echo "${{ github.event.pull_request.body }}" > pr_desc.txt
+          
+          python3 tools/gatekeeper_process.py --files "$CHANGED_FILES" --desc-file pr_desc.txt
+
+      # 5. Metrics Collection (Experimental)
+      - name: Collect Metrics
+        if: always() # Run even if previous steps failed
+        run: |
+          # This assumes ci_logs.jsonl is generated during test execution. 
+          # Since we aren't running actual app tests in this workflow example,
+          # we check if metrics tool runs.
+          if [ -f "ci_logs.jsonl" ]; then
+            python3 tools/gatekeeper_metrics.py --log-file ci_logs.jsonl
+          else
+            echo "No CI logs found. Skipping metrics."
+          fi

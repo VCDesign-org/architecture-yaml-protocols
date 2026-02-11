@@ -83,7 +83,7 @@ def verify_logs(logs, requirements):
             
     return failures
 
-def verify_golden_files(closures_yaml, closure_id=None):
+def verify_golden_files(closures_yaml, closure_id=None, profile='enforce'):
     data = load_yaml(closures_yaml)
     failures = []
     
@@ -102,16 +102,25 @@ def verify_golden_files(closures_yaml, closure_id=None):
                 print(f"Closure {cl['id']}: Invalid golden_test config.")
                 continue
 
+            # Strict check for missing files in Enforce/Lockdown
+            missing = []
             if not os.path.exists(expected_path):
-                pass
-            
+                missing.append(f"Expected file missing: {expected_path}")
             if not os.path.exists(actual_path):
-                 pass
+                missing.append(f"Actual file missing: {actual_path}")
             
-            if os.path.exists(expected_path) and os.path.exists(actual_path):
-                with open(expected_path, 'r') as f1, open(actual_path, 'r') as f2:
-                    if f1.read() != f2.read():
-                        failures.append(f"{cl['id']}: Content mismatch between {expected_path} and {actual_path}")
+            if missing:
+                if profile in ['enforce', 'lockdown']:
+                    failures.extend([f"{cl['id']}: {m}" for m in missing])
+                else:
+                    for m in missing:
+                        print(f"WARNING: {cl['id']}: {m} (Allowed in '{profile}' mode)")
+                continue
+
+            # Content comparison
+            with open(expected_path, 'r') as f1, open(actual_path, 'r') as f2:
+                if f1.read() != f2.read():
+                    failures.append(f"{cl['id']}: Content mismatch between {expected_path} and {actual_path}")
 
     return failures
 
@@ -120,6 +129,7 @@ def main():
     parser.add_argument('--log-file', type=str, help='Path to log file (JSONL)')
     parser.add_argument('--closures', type=str, required=True, help='Path to closures.yaml')
     parser.add_argument('--closure-id', type=str, help='Specific closure ID to verify')
+    parser.add_argument('--profile', type=str, default='enforce', help='Governance Profile (explore/enforce/lockdown)')
     args = parser.parse_args()
 
     # 1. Log Verification
@@ -138,11 +148,12 @@ def main():
                     sys.exit(1)
 
     # 2. Golden File Verification
-    golden_failures = verify_golden_files(args.closures, args.closure_id)
+    golden_failures = verify_golden_files(args.closures, args.closure_id, args.profile)
+    
     if golden_failures:
         print("Runtime Verification Failed (IO Equivalence)!")
         for failure in golden_failures:
-             print(failure)
+             print(f"  - {failure}")
         sys.exit(1)
 
     print("Runtime Verification Passed.")

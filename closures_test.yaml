@@ -1,0 +1,7 @@
+closures:
+  - id: "cl-test-missing"
+    description: "Test closure with missing golden files"
+    verification:
+      golden_test:
+        expected: "missing_expected.txt"
+        actual: "missing_actual.txt"

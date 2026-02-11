@@ -11,12 +11,33 @@ boundaries:
     description: "運用ログにスタックトレースを含めてはならない（デバッグログのみ可）"
     type: "prohibition"
     derived_from_decisions: ["d-logging-01"]
+    constraints:
+      python:
+        forbidden_symbols: ["printStackTrace", "console.trace", "print"]
+        allowed_scopes: ["logger.debug"]
+    exception_protocol:
+      decision_feedback_required: true
+      approval_role: "Tech Lead"
+      update_target: "decisions/d-logging-01.yaml"
 
   - id: "b-logging-03"
     name: "domain-event-integrity"
     description: "関数名をイベント名として使用してはならない（ドメインイベント名を使用する）"
     type: "prohibition"
     derived_from_decisions: ["d-logging-03"]
+
+  - id: "b-memory-01"
+    name: "direct-memory-management-prohibition"
+    description: "メモリの直接管理（malloc/free等）を行ってはならない（スマートポインタ等を使用する）"
+    type: "prohibition"
+    derived_from_decisions: []
+    constraints:
+      c_cpp:
+        forbidden_symbols: ["malloc", "free", "new", "delete"]
+    exception_protocol:
+      decision_feedback_required: true
+      approval_role: "Architect"
+      update_target: "decisions/d-memory-01.yaml"
 
   - id: "b-logging-04"
     name: "pii-privacy-protection"

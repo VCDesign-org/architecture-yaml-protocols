@@ -43,7 +43,9 @@ def generate_prompt(comp_id, root_dir):
     b_ids = applies.get('boundaries', [])
     c_ids = applies.get('connections', [])
     cl_ids = applies.get('closures', [])
-
+    
+    # Contracts are now merged into boundaries/closures in components.yaml
+    
     my_bounds = get_items_by_ids(bounds, b_ids, 'boundaries')
     my_conns = get_items_by_ids(conns, c_ids, 'connections')
     my_closures = get_items_by_ids(closer, cl_ids, 'closures')
@@ -64,10 +66,19 @@ def generate_prompt(comp_id, root_dir):
     output.append("")
 
     output.append("## Boundaries (MUST/MUST NOT)")
+    output.append("> [!WARNING]")
+    output.append("> These boundaries are enforced by `gatekeeper_lint.py`. Violations will be automatically rejected.")
+    output.append("")
+    
     if not my_bounds:
         output.append("None")
     for b in my_bounds:
         output.append(f"- **{b['name']}**: {b['description']}")
+        if 'constraints' in b:
+             constraints = b['constraints']
+             for lang, rules in constraints.items():
+                 output.append(f"  - [CONSTRAINT] {lang}: Forbidden {rules.get('forbidden_symbols', [])}")
+        
         # Include Decision context if available
         derived_ids = b.get('derived_from_decisions', [])
         for did in derived_ids:
@@ -90,6 +101,11 @@ def generate_prompt(comp_id, root_dir):
     for cl in my_closures:
         output.append(f"- **{cl['id']}**: {cl['description']}")
         output.append(f"  - Handling: {cl['handling']}")
+        if 'verification' in cl:
+            v = cl['verification']
+            output.append(f"  - [VERIFICATION] Exit Code: {v.get('exit_code')}")
+            output.append(f"  - [VERIFICATION] Logs: {v.get('mandatory_log_events', [])}")
+            output.append(f"  - [VERIFICATION] Test: `{v.get('test_command')}`")
     
     return "\n".join(output)
 

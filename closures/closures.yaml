@@ -3,6 +3,10 @@ closures:
   - id: "cl-c-messaging-01"
     description: "Exponential Backoff 付きリトライ"
     handling: "Transient Error"
+    verification:
+      exit_code: 0
+      mandatory_log_events: ["RetryAttempted", "RetrySucceeded"]
+      test_command: "make test-retry"
 
   - id: "cl-c-logging-01"
     description: "サーキットブレーカーによる遮断と自律復旧"

@@ -14,12 +14,14 @@ components:
         - "b-api-01" # Breaking Change
         - "b-api-02" # Idempotency Key
         - "b-api-03" # Error Standard
+        - "b-logging-02" # No Stacktrace (Contract)
       connections:
         - "c-api-01" # Sync Query
         - "c-api-02" # Sync Command
       closures:
         - "cl-c-api-01" # Fallback
         - "cl-c-api-02" # Idempotency Check
+        - "cl-c-messaging-01" # Retry Logic (Contract)
 
   # Messaging Worker Example
   - id: "comp-messaging-01"

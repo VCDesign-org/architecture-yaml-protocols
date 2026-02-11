@@ -22,6 +22,22 @@ def get_items_by_ids(data, ids, kind_key='boundaries'):
             items.append(found)
     return items
 
+def get_enforcement_text(check_type, value):
+    """
+    Returns a descriptive warning based on the check value.
+    """
+    value = value.lower()
+    if value == 'block' or value == 'strict':
+        return f"BLOCK (Violations will be rejected by {check_type})"
+    elif value == 'warn':
+        return f"WARNING (Violations will generate alerts but allow merge)"
+    elif value == 'require_todo_update':
+        return "REQUIRE_TODO (Must include '## TODO Update' in PR description)"
+    elif value == 'require_approval':
+        return "REQUIRE_APPROVAL (Must have Architect approval)"
+    else:
+        return f"{value.upper()}"
+
 def generate_prompt(comp_id, root_dir, profile_name="enforce"):
     # Load Governance Profile
     profile_path = os.path.join(root_dir, 'profile/profile.yaml')
@@ -69,19 +85,27 @@ def generate_prompt(comp_id, root_dir, profile_name="enforce"):
 
     # Governance Profile Section
     if profile:
-        output.append(f"## Governance Profile: {profile_name.upper()}")
+        output.append(f"# GOVERNANCE PROFILE: {profile_name.upper()}")
         output.append(f"> {profile.get('description', '')}")
-        output.append("### Enforcement Levels")
+        output.append("")
+        output.append("## Enforcement Rules")
         checks = profile.get('checks', {})
-        output.append(f"- **Static Analysis**: {checks.get('static', 'unknown')}")
-        output.append(f"- **Runtime Verification**: {checks.get('runtime', 'unknown')}")
-        output.append(f"- **Process Gate**: {checks.get('process', 'unknown')}")
+        
+        static_rule = get_enforcement_text("Gatekeeper Lint", checks.get('static', 'unknown'))
+        runtime_rule = get_enforcement_text("Runtime Gate", checks.get('runtime', 'unknown'))
+        process_rule = get_enforcement_text("Process Gate", checks.get('process', 'unknown'))
+        
+        output.append(f"- **Static Analysis**: {static_rule}")
+        output.append(f"- **Runtime Verification**: {runtime_rule}")
+        output.append(f"- **Process Gate**: {process_rule}")
         output.append("")
 
     output.append("## Boundaries (MUST/MUST NOT)")
-    output.append("> [!WARNING]")
-    output.append("> These boundaries are enforced by `gatekeeper_lint.py`. Violations will be automatically rejected.")
-    output.append("")
+    # Add warnings only if enforcement is Block/Strict
+    if profile.get('checks', {}).get('static') in ['block', 'strict']:
+        output.append("> [!WARNING]")
+        output.append("> These boundaries are enforced by `gatekeeper_lint.py`. Violations will be automatically rejected.")
+        output.append("")
     
     if not my_bounds:
         output.append("None")
@@ -118,8 +142,16 @@ def generate_prompt(comp_id, root_dir, profile_name="enforce"):
             v = cl['verification']
             # Inject Observability Contract
             mandatory = v.get('mandatory_log_events', [])
+            
+            # Format mandatory logs nicely
             if mandatory:
-                output.append(f"  - **[OBSERVABILITY CONTRACT]** Mandatory Logs: {mandatory}")
+                log_names = []
+                for m in mandatory:
+                    if isinstance(m, dict):
+                        log_names.append(m['name'])
+                    else:
+                        log_names.append(m)
+                output.append(f"  - **[OBSERVABILITY CONTRACT]** Mandatory Logs: {log_names}")
             
             output.append(f"  - [VERIFICATION] Exit Code: {v.get('exit_code')}")
             output.append(f"  - [VERIFICATION] Test: `{v.get('test_command')}`")

@@ -1,0 +1,2 @@
+{"event": "RetryAttempted", "attempt": 1, "error": "Timeout"}
+{"event": "RetrySucceeded"}

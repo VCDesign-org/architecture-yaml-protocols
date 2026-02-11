@@ -65,6 +65,25 @@ def validate_integrity(root_dir):
             if did not in decision_ids:
                 errors.append(f"[Boundary {bid}] References missing Decision: {did}")
 
+        # 3. Validate Exception Protocol -> Update Target
+        # The update_target should be a valid Decision ID (or point to a valid file, but we are standardizing on ID)
+        if 'exception_protocol' in bound:
+            ep = bound['exception_protocol']
+            target = ep.get('update_target')
+            if target:
+                # If target looks like a path "decisions/d-xxx.yaml", try to extract ID
+                # But we want to enforce ID usage.
+                
+                # Check if it is a valid ID directly
+                if target in decision_ids:
+                    continue
+                
+                # Check if it looks like a path and warn/fail?
+                # The user requirement is: "update_target that points to valid Decision IDs"
+                # So we expect "d-logging-01"
+                
+                errors.append(f"[Boundary {bid}] Invalid Exception Protocol update_target: '{target}'. Must be a valid Decision ID.")
+
     return errors
 
 if __name__ == "__main__":

@@ -73,3 +73,14 @@ decisions:
   - id: "d-release-02"
     description: "ロールバックと自動復旧の基準を決定する"
     links: { boundary: [], connection: [], closure: ["cl-c-release-01"] }
+
+  # Implementation Choices (New for Governance)
+  - id: "d-memory-01"
+    description: "メモリ管理戦略（手動管理 vs 自動管理）を決定する"
+    links: { boundary: ["b-memory-01"], connection: [], closure: [] }
+  - id: "d-fs-01"
+    description: "ファイルシステムアクセスの方針（直接アクセス禁止等）を決定する"
+    links: { boundary: ["b-side-effects-01"], connection: [], closure: [] }
+  - id: "d-net-01"
+    description: "外部ネットワークアクセスの方針（直接アクセス禁止等）を決定する"
+    links: { boundary: ["b-side-effects-02"], connection: [], closure: [] }

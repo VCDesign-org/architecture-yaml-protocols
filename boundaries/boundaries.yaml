@@ -18,7 +18,7 @@ boundaries:
     exception_protocol:
       decision_feedback_required: true
       approval_role: "Tech Lead"
-      update_target: "decisions/d-logging-01.yaml"
+      update_target: "d-logging-01"
 
   - id: "b-logging-03"
     name: "domain-event-integrity"
@@ -37,7 +37,7 @@ boundaries:
     exception_protocol:
       decision_feedback_required: true
       approval_role: "Architect"
-      update_target: "decisions/d-memory-01.yaml"
+      update_target: "d-memory-01"
 
   # Side-Effect Boundaries
   - id: "b-side-effects-01"
@@ -53,7 +53,7 @@ boundaries:
     exception_protocol:
       decision_feedback_required: true
       approval_role: "Tech Lead"
-      update_target: "decisions/d-fs-01.yaml"
+      update_target: "d-fs-01"
 
   - id: "b-side-effects-02"
     name: "network-access-prohibition"
@@ -66,7 +66,7 @@ boundaries:
     exception_protocol:
       decision_feedback_required: true
       approval_role: "Tech Lead"
-      update_target: "decisions/d-net-01.yaml"
+      update_target: "d-net-01"
 
   - id: "b-logging-04"
     name: "pii-privacy-protection"

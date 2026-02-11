@@ -5,7 +5,16 @@ closures:
     handling: "Transient Error"
     verification:
       exit_code: 0
-      mandatory_log_events: ["RetryAttempted", "RetrySucceeded"]
+      mandatory_log_events: 
+        - name: "RetryAttempted"
+          schema:
+            type: "object"
+            properties:
+              event: {const: "RetryAttempted"}
+              attempt: {type: "integer"}
+              error: {type: "string"}
+            required: ["event", "attempt"]
+        - name: "RetrySucceeded"
       test_command: "make test-retry"
       golden_test:
         expected: "examples/golden/retry_output.txt"

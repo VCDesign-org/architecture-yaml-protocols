@@ -3,74 +3,83 @@ import sys
 import os
 import re
 
-PROTOCOL_DIRS = [
-    'boundaries',
-    'closures',
-    'components',
-    'connections',
-    'decisions',
-    'profile'
-]
+def parse_pr_description(desc_file):
+    if not os.path.exists(desc_file):
+        return ""
+    with open(desc_file, 'r') as f:
+        return f.read()
 
-def is_protocol_file(filepath):
-    # Check if file is in one of the protocol directories and is a YAML file
-    parts = filepath.split(os.sep)
-    if len(parts) > 1 and parts[0] in PROTOCOL_DIRS and filepath.endswith('.yaml'):
-        return True
-    return False
-
-def check_process_gate(changed_files, pr_description):
-    # 1. Identify if any protocol file is modified
-    protocol_changed = False
-    for f in changed_files:
-        if is_protocol_file(f.strip()):
-            protocol_changed = True
-            break
+def check_protocol_changes(files):
+    # Detect if any protocol-defining files (yaml) are changed
+    protocol_files = []
+    golden_files = []
+    boundary_files = []
     
-    if not protocol_changed:
-        print("No protocol changes detected. Process gate passed.")
-        return True
+    for f in files:
+        if f.endswith('.yaml') or f.endswith('.yml'):
+             protocol_files.append(f)
+             if "boundaries.yaml" in f or "boundaries/" in f:
+                 boundary_files.append(f)
+        elif "examples/golden" in f:
+             golden_files.append(f)
+            
+    return protocol_files, golden_files, boundary_files
 
-    # 2. If protocol changed, check PR description for TODO update section
-    # We look for something like "## TODO Update" or "## Impact Analysis"
-    # Case insensitive
-    if not pr_description:
-         print("Protocol Compliance Error: Protocol files changed but PR description is empty.")
-         return False
-
-    required_section_pattern = r'#+\s*(todo|update|impact)'
-    if re.search(required_section_pattern, pr_description, re.IGNORECASE):
-        print("Protocol changes detected. PR description validation passed (TODO section found).")
-        return True
-    else:
-        print("Protocol Compliance Error: Protocol files changed.")
-        print("Please add a '## TODO Update' or '## Impact Analysis' section to your PR description")
-        print("to acknowledge the impact of these protocol changes.")
-        return False
-
-def main():
-    parser = argparse.ArgumentParser(description='Gatekeeper Process: Verify PR Process Compliance')
-    parser.add_argument('--files', type=str, help='Comma separated list of changed files')
-    parser.add_argument('--desc-file', type=str, help='Path to file containing PR description')
-    args = parser.parse_args()
-
-    files = []
-    if args.files:
-        files = args.files.split(',')
+def validate_pr(files, desc_file):
+    protocol_changes, golden_changes, boundary_changes = check_protocol_changes(files)
     
-    description = ""
-    if args.desc_file:
-        try:
-            with open(args.desc_file, 'r') as f:
-                description = f.read()
-        except Exception as e:
-            print(f"Error reading description file: {e}")
+    if not protocol_changes and not golden_changes:
+        print("No protocol or golden file changes detected. Process gate passed.")
+        sys.exit(0)
+
+    description = parse_pr_description(desc_file)
+    
+    # 0. Boundary Changes (Strictest)
+    if boundary_changes:
+        # Require "Boundary ID" and "Test Evidence"
+        missing_sections = []
+        if not re.search(r'##\s*Boundary ID', description, re.IGNORECASE):
+            missing_sections.append("## Boundary ID")
+        if not re.search(r'##\s*Test Evidence', description, re.IGNORECASE):
+            missing_sections.append("## Test Evidence")
+            
+        if missing_sections:
+            print("Protocol Compliance Error: Boundaries modified.")
+            print(f"Changed files: {boundary_changes}")
+            print(f"Missing required sections in PR description: {missing_sections}")
+            print("Please explicitly state which Boundary ID is modified and provide Test Evidence.")
             sys.exit(1)
 
-    if check_process_gate(files, description):
-        sys.exit(0)
-    else:
-        sys.exit(1)
+    # 1. Check for Protocol Changes (General)
+    if protocol_changes:
+        # Require "TODO Update" or "Impact Analysis"
+        if "## TODO Update" not in description and "## Impact Analysis" not in description:
+            print("Protocol Compliance Error: Protocol files changed.")
+            print(f"Changed files: {protocol_changes}")
+            print("Please add a '## TODO Update' or '## Impact Analysis' section to your PR description")
+            print("to acknowledge the impact of these protocol changes.")
+            sys.exit(1)
+
+    # 2. Check for Golden File Changes
+    if golden_changes:
+        if "## Impact Analysis" not in description and "## TODO Update" not in description:
+            print("Protocol Compliance Error: Golden Files (IO Contract) changed.")
+            print(f"Changed files: {golden_changes}")
+            print("Changing a golden file implies a change in the System's Observability Contract.")
+            print("Please add a '## Impact Analysis' section to your PR description explaining strictly why this change is necessary.")
+            sys.exit(1)
+
+    print("Protocol/Golden changes detected. PR description validation passed.")
+    sys.exit(0)
+
+def main():
+    parser = argparse.ArgumentParser(description='Process Gate: Verify PR Compliance')
+    parser.add_argument('--files', type=str, required=True, help='Comma-separated list of changed files')
+    parser.add_argument('--desc-file', type=str, required=True, help='Path to file containing PR description')
+    args = parser.parse_args()
+    
+    file_list = [f.strip() for f in args.files.split(',')]
+    validate_pr(file_list, args.desc_file)
 
 if __name__ == "__main__":
     main()

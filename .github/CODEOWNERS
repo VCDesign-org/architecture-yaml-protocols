@@ -1,0 +1,3 @@
+# Protocol definitions require Architect approval
+*.yaml @architect-team
+decisions/ @architect-team

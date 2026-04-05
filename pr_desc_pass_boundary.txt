@@ -1,3 +1,0 @@
-## Impact Analysis
-## Boundary ID: b-logging-01
-## Test Evidence: verified locally
